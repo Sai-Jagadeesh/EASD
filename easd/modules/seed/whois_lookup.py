@@ -128,19 +128,48 @@ async def run(
 
     # If we have a company name but no domains, try to guess common domains
     if session.target_company and not domains_to_check:
-        company_slug = re.sub(r"[^a-z0-9]", "", session.target_company.lower())
-        if company_slug:
-            # Common TLDs to try
-            tlds = ["com", "net", "org", "io", "co"]
-            for tld in tlds:
-                domains_to_check.add(f"{company_slug}.{tld}")
+        company_lower = session.target_company.lower().strip()
 
-            # Also try with hyphens for multi-word companies
-            company_hyphen = re.sub(r"\s+", "-", session.target_company.lower())
-            company_hyphen = re.sub(r"[^a-z0-9-]", "", company_hyphen)
-            if company_hyphen != company_slug:
-                for tld in tlds[:3]:  # Just main TLDs
-                    domains_to_check.add(f"{company_hyphen}.{tld}")
+        # Common company suffixes to strip
+        company_suffixes = [
+            r'\s+inc\.?$', r'\s+llc\.?$', r'\s+ltd\.?$', r'\s+limited$',
+            r'\s+corp\.?$', r'\s+corporation$', r'\s+co\.?$', r'\s+company$',
+            r'\s+plc\.?$', r'\s+gmbh$', r'\s+ag$', r'\s+sa$', r'\s+srl$',
+            r'\s+holdings?$', r'\s+group$', r'\s+international$', r'\s+intl\.?$',
+        ]
+
+        # Get base company name without suffixes
+        base_name = company_lower
+        for suffix in company_suffixes:
+            base_name = re.sub(suffix, '', base_name, flags=re.IGNORECASE)
+        base_name = base_name.strip()
+
+        # Generate variations
+        variations = set()
+
+        # Base name without suffix (most likely the actual domain)
+        base_slug = re.sub(r"[^a-z0-9]", "", base_name)
+        if base_slug:
+            variations.add(base_slug)
+
+        # Full company name (including suffix)
+        full_slug = re.sub(r"[^a-z0-9]", "", company_lower)
+        if full_slug and full_slug != base_slug:
+            variations.add(full_slug)
+
+        # Hyphenated versions for multi-word names
+        base_hyphen = re.sub(r"\s+", "-", base_name)
+        base_hyphen = re.sub(r"[^a-z0-9-]", "", base_hyphen).strip('-')
+        if base_hyphen and '-' in base_hyphen:
+            variations.add(base_hyphen)
+
+        # Common TLDs to try
+        tlds = ["com", "net", "org", "io", "co"]
+
+        for variation in variations:
+            if variation:
+                for tld in tlds:
+                    domains_to_check.add(f"{variation}.{tld}")
 
     # Perform WHOIS lookups
     for domain in domains_to_check:
