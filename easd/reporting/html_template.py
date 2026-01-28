@@ -543,14 +543,214 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             opacity: 0.5;
         }
 
+        /* Screenshot Gallery */
+        .screenshot-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .screenshot-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .screenshot-card:hover {
+            border-color: var(--accent-primary);
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+
+        .screenshot-image {
+            height: 180px;
+            background: var(--bg-base);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .screenshot-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .screenshot-image img:hover {
+            transform: scale(1.05);
+        }
+
+        .no-screenshot {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .no-screenshot span:first-child {
+            font-size: 32px;
+            opacity: 0.5;
+        }
+
+        .screenshot-info {
+            padding: 16px;
+        }
+
+        .screenshot-url {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .screenshot-url a {
+            color: var(--accent-primary);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 14px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .screenshot-url a:hover {
+            color: var(--accent-primary-hover);
+        }
+
+        .screenshot-title {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .screenshot-techs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .table-thumbnail {
+            width: 80px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .table-thumbnail:hover {
+            transform: scale(1.1);
+        }
+
+        /* View toggle */
+        .view-toggle {
+            display: flex;
+            gap: 8px;
+        }
+
+        .view-btn {
+            padding: 8px 16px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .view-btn:hover {
+            background: var(--bg-overlay);
+            color: var(--text-primary);
+        }
+
+        .view-btn.active {
+            background: var(--accent-primary-muted);
+            border-color: var(--accent-primary);
+            color: var(--accent-primary-hover);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(4px);
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            max-width: 90%;
+            max-height: 90%;
+            position: relative;
+        }
+
+        .modal-content img {
+            max-width: 100%;
+            max-height: 85vh;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal-url {
+            text-align: center;
+            margin-top: 16px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .modal-url a {
+            color: var(--accent-primary);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            font-size: 32px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: color 0.15s ease;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
+        }
+
         @media (max-width: 1200px) {
             .grid-2 { grid-template-columns: 1fr; }
+            .screenshot-gallery { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
         }
 
         @media (max-width: 768px) {
             .sidebar { display: none; }
             .main-content { margin-left: 0; }
             .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+            .screenshot-gallery { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -589,6 +789,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <span class="nav-icon">🔗</span>
                 <span>Web Apps</span>
                 <span class="nav-count">{{ stats.webapps }}</span>
+            </a>
+            <a href="#webapps" class="nav-item">
+                <span class="nav-icon">📷</span>
+                <span>Screenshots</span>
+                <span class="nav-count">{{ stats.screenshots }}</span>
             </a>
             <a href="#cloud" class="nav-item">
                 <span class="nav-icon">☁️</span>
@@ -742,35 +947,57 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         <div class="section-icon subdomains">🌐</div>
                         <span>Subdomains</span>
                     </div>
-                    <div class="section-badge">{{ subdomains|length }} found</div>
+                    <div class="section-badge">{{ subdomains|length }} found ({{ subdomains|selectattr('is_alive')|list|length }} active)</div>
                 </div>
                 <div class="section-content">
                     <div class="search-box">
                         <span class="search-icon">🔍</span>
                         <input type="text" class="search-input" placeholder="Search subdomains..." onkeyup="filterTable(this, 'subdomains-table')">
                     </div>
+                    <div class="subdomain-filters" style="margin-bottom: 16px;">
+                        <button class="view-btn active" onclick="filterSubdomains('all', this)">All ({{ subdomains|length }})</button>
+                        <button class="view-btn" onclick="filterSubdomains('alive', this)">Active ({{ subdomains|selectattr('is_alive')|list|length }})</button>
+                        <button class="view-btn" onclick="filterSubdomains('dead', this)">Inactive ({{ subdomains|rejectattr('is_alive')|list|length }})</button>
+                    </div>
                     <table class="data-table" id="subdomains-table">
                         <thead>
                             <tr>
                                 <th>Subdomain</th>
                                 <th>IP Addresses</th>
-                                <th>Status</th>
+                                <th>DNS Status</th>
+                                <th>HTTP</th>
                                 <th>Source</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for sub in subdomains %}
-                            <tr>
-                                <td class="mono">{{ sub.fqdn }}</td>
-                                <td class="mono">{{ sub.resolved_ips|join(', ') or '-' }}</td>
-                                <td>
+                            <tr data-alive="{{ 'true' if sub.is_alive else 'false' }}">
+                                <td class="mono">
                                     {% if sub.is_alive %}
-                                    <span class="tag tag-alive">Alive</span>
+                                    <a href="https://{{ sub.fqdn }}" target="_blank" style="color: var(--accent-primary);">{{ sub.fqdn }}</a>
                                     {% else %}
-                                    <span class="tag tag-dead">Unknown</span>
+                                    {{ sub.fqdn }}
                                     {% endif %}
                                 </td>
-                                <td>{{ sub.source }}</td>
+                                <td class="mono">{{ sub.resolved_ips|join(', ') or '-' }}</td>
+                                <td>
+                                    {% if sub.resolved_ips %}
+                                    <span class="tag tag-alive">Resolves</span>
+                                    {% else %}
+                                    <span class="tag tag-dead">No DNS</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% set webapp_match = webapps|selectattr('host', 'equalto', sub.fqdn)|first %}
+                                    {% if webapp_match %}
+                                    <span class="tag tag-alive">{{ webapp_match.status_code }}</span>
+                                    {% elif sub.is_alive %}
+                                    <span class="tag tag-info">DNS Only</span>
+                                    {% else %}
+                                    <span class="tag tag-dead">—</span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="tag tag-info">{{ sub.source }}</span></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -823,7 +1050,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 </div>
             </section>
 
-            <!-- Web Applications -->
+            <!-- Web Applications with Screenshots -->
             <section id="webapps" class="section-card">
                 <div class="section-header" onclick="toggleSection(this)">
                     <div class="section-title">
@@ -834,36 +1061,87 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 </div>
                 <div class="section-content">
                     {% if webapps %}
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>URL</th>
-                                <th>Title</th>
-                                <th>Status</th>
-                                <th>Technologies</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for webapp in webapps %}
-                            <tr>
-                                <td class="mono"><a href="{{ webapp.url }}" target="_blank" style="color: var(--accent-primary);">{{ webapp.url }}</a></td>
-                                <td>{{ webapp.title or '-' }}</td>
-                                <td>
-                                    <span class="tag {% if webapp.status_code == 200 %}tag-alive{% else %}tag-info{% endif %}">
+                    <!-- Screenshot Gallery View -->
+                    <div class="view-toggle" style="margin-bottom: 16px;">
+                        <button class="view-btn active" onclick="showView('gallery')">📷 Gallery View</button>
+                        <button class="view-btn" onclick="showView('table')">📋 Table View</button>
+                    </div>
+
+                    <div id="gallery-view" class="screenshot-gallery">
+                        {% for webapp in webapps %}
+                        <div class="screenshot-card">
+                            <div class="screenshot-image">
+                                {% if webapp.screenshot_base64 %}
+                                <img src="data:image/png;base64,{{ webapp.screenshot_base64 }}" alt="{{ webapp.url }}" onclick="openModal(this.src, '{{ webapp.url }}')">
+                                {% elif webapp.screenshot_path %}
+                                <img src="file://{{ webapp.screenshot_path }}" alt="{{ webapp.url }}" onclick="openModal(this.src, '{{ webapp.url }}')">
+                                {% else %}
+                                <div class="no-screenshot">
+                                    <span>📷</span>
+                                    <span>No Screenshot</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="screenshot-info">
+                                <div class="screenshot-url">
+                                    <a href="{{ webapp.url }}" target="_blank">{{ webapp.host }}</a>
+                                    <span class="tag {% if webapp.status_code == 200 %}tag-alive{% elif webapp.status_code >= 300 and webapp.status_code < 400 %}tag-info{% elif webapp.status_code >= 400 %}tag-dead{% else %}tag-info{% endif %}">
                                         {{ webapp.status_code }}
                                     </span>
-                                </td>
-                                <td>
-                                    <div class="tech-grid">
-                                        {% for tech in webapp.technologies[:5] %}
-                                        <span class="tag tag-tech">{{ tech.name }}</span>
-                                        {% endfor %}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                </div>
+                                <div class="screenshot-title">{{ webapp.title or 'No title' }}</div>
+                                <div class="screenshot-techs">
+                                    {% for tech in webapp.technologies[:3] %}
+                                    <span class="tag tag-tech">{{ tech.name }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div id="table-view" class="hidden">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Screenshot</th>
+                                    <th>URL</th>
+                                    <th>Title</th>
+                                    <th>Status</th>
+                                    <th>Technologies</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for webapp in webapps %}
+                                <tr>
+                                    <td>
+                                        {% if webapp.screenshot_base64 %}
+                                        <img src="data:image/png;base64,{{ webapp.screenshot_base64 }}" class="table-thumbnail" onclick="openModal(this.src, '{{ webapp.url }}')">
+                                        {% elif webapp.screenshot_path %}
+                                        <img src="file://{{ webapp.screenshot_path }}" class="table-thumbnail" onclick="openModal(this.src, '{{ webapp.url }}')">
+                                        {% else %}
+                                        <span class="tag tag-dead">No img</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="mono"><a href="{{ webapp.url }}" target="_blank" style="color: var(--accent-primary);">{{ webapp.url }}</a></td>
+                                    <td>{{ webapp.title or '-' }}</td>
+                                    <td>
+                                        <span class="tag {% if webapp.status_code == 200 %}tag-alive{% else %}tag-info{% endif %}">
+                                            {{ webapp.status_code }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="tech-grid">
+                                            {% for tech in webapp.technologies[:5] %}
+                                            <span class="tag tag-tech">{{ tech.name }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                     {% else %}
                     <div class="empty-state">
                         <div class="empty-state-icon">🔗</div>
@@ -1062,6 +1340,17 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         </div>
     </main>
 
+    <!-- Screenshot Modal -->
+    <div id="screenshotModal" class="modal" onclick="closeModal(event)">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <img id="modalImage" src="" alt="Screenshot">
+            <div class="modal-url">
+                <a id="modalUrl" href="" target="_blank"></a>
+            </div>
+        </div>
+    </div>
+
     <script>
         function toggleSection(header) {
             const content = header.nextElementSibling;
@@ -1086,6 +1375,77 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 rows[i].style.display = found ? '' : 'none';
             }
         }
+
+        // View toggle for screenshots
+        function showView(view) {
+            const galleryView = document.getElementById('gallery-view');
+            const tableView = document.getElementById('table-view');
+
+            if (view === 'gallery') {
+                galleryView.classList.remove('hidden');
+                tableView.classList.add('hidden');
+            } else {
+                galleryView.classList.add('hidden');
+                tableView.classList.remove('hidden');
+            }
+
+            // Update button states
+            const container = event.target.parentElement;
+            container.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Filter subdomains by status
+        function filterSubdomains(filter, btn) {
+            const table = document.getElementById('subdomains-table');
+            const rows = table.querySelectorAll('tbody tr');
+
+            rows.forEach(row => {
+                const isAlive = row.dataset.alive === 'true';
+                if (filter === 'all') {
+                    row.style.display = '';
+                } else if (filter === 'alive') {
+                    row.style.display = isAlive ? '' : 'none';
+                } else if (filter === 'dead') {
+                    row.style.display = isAlive ? 'none' : '';
+                }
+            });
+
+            // Update button states
+            const container = btn.parentElement;
+            container.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        // Modal functions
+        function openModal(imageSrc, url) {
+            const modal = document.getElementById('screenshotModal');
+            const modalImg = document.getElementById('modalImage');
+            const modalUrl = document.getElementById('modalUrl');
+
+            modal.classList.add('active');
+            modalImg.src = imageSrc;
+            modalUrl.href = url;
+            modalUrl.textContent = url;
+
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal(event) {
+            if (event && event.target !== event.currentTarget && !event.target.classList.contains('modal-close')) {
+                return;
+            }
+            const modal = document.getElementById('screenshotModal');
+            modal.classList.remove('active');
+            document.body.style.overflow = 'auto';
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
 
         // Smooth scroll for nav links
         document.querySelectorAll('.nav-item').forEach(link => {

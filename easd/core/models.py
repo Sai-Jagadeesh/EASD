@@ -199,6 +199,7 @@ class WebApplication(BaseAsset):
     headers: dict[str, str] = Field(default_factory=dict)
     certificate: Optional[Certificate] = None
     screenshot_path: str = ""
+    screenshot_base64: str = ""  # Base64 encoded screenshot for HTML embedding
     favicon_hash: str = ""
     response_time_ms: int = 0
     is_alive: bool = False

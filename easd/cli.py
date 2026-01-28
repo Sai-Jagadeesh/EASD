@@ -1415,10 +1415,11 @@ def _export_csv(db: Database, session, output: Optional[Path]):
 
 
 def _export_html(db: Database, session, output: Path):
-    """Export data to professional HTML report."""
+    """Export data to professional HTML report with embedded screenshots."""
     from jinja2 import Template
     from datetime import datetime
     from collections import Counter
+    import base64
     from easd.reporting.html_template import HTML_TEMPLATE
 
     template = Template(HTML_TEMPLATE)
@@ -1430,6 +1431,15 @@ def _export_html(db: Database, session, output: Path):
     webapps = db.get_web_applications(session.id)
     findings = db.get_findings(session.id)
     cloud_assets = db.get_cloud_assets(session.id)
+
+    # Load and embed screenshots as base64
+    for webapp in webapps:
+        if webapp.screenshot_path and Path(webapp.screenshot_path).exists():
+            try:
+                with open(webapp.screenshot_path, "rb") as img_file:
+                    webapp.screenshot_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+            except Exception:
+                pass  # Skip if we can't read the screenshot
 
     # Sort findings by severity
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -1454,6 +1464,9 @@ def _export_html(db: Database, session, output: Path):
     # Target name
     target = session.target_company or (session.target_domains[0] if session.target_domains else "Unknown")
 
+    # Count screenshots
+    screenshots_count = sum(1 for w in webapps if w.screenshot_base64 or w.screenshot_path)
+
     html = template.render(
         target=target,
         session_id=session.id,
@@ -1464,6 +1477,7 @@ def _export_html(db: Database, session, output: Path):
             "ips": len(ips),
             "ports": session.total_ports,
             "webapps": len(webapps),
+            "screenshots": screenshots_count,
             "cloud": len(cloud_assets),
             "findings": len(findings),
             "critical": sum(1 for f in findings if f.severity.value == "critical"),
