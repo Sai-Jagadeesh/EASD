@@ -5,6 +5,7 @@ Captures screenshots of web applications using multiple methods:
 - gowitness (preferred, if available)
 - Playwright/Chromium (fallback)
 - Headless Chrome via subprocess
+- HTTP-based preview (last resort)
 """
 
 import asyncio
@@ -22,6 +23,39 @@ from easd.core.models import (
     WebApplication,
     ScanSession,
 )
+
+
+def check_screenshot_capabilities() -> dict:
+    """Check what screenshot methods are available."""
+    capabilities = {
+        "gowitness": shutil.which("gowitness") is not None,
+        "playwright": False,
+        "chrome": False,
+    }
+
+    # Check Playwright
+    try:
+        import playwright
+        capabilities["playwright"] = True
+    except ImportError:
+        pass
+
+    # Check Chrome
+    chrome_paths = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    for path in chrome_paths:
+        if shutil.which(path) or Path(path).exists():
+            capabilities["chrome"] = True
+            break
+
+    if not capabilities["chrome"]:
+        capabilities["chrome"] = shutil.which("google-chrome") is not None or shutil.which("chromium") is not None
+
+    return capabilities
 
 
 async def capture_with_gowitness(
@@ -212,6 +246,65 @@ async def capture_with_chrome(
         return False
 
 
+async def capture_with_httpx_html(
+    url: str,
+    output_path: Path,
+    timeout: int = 30,
+) -> bool:
+    """
+    Create a simple HTML preview when browser capture fails.
+    This creates a basic HTML file that can be converted to image.
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=timeout, verify=False, follow_redirects=True) as client:
+            response = await client.get(url)
+
+            # Extract title
+            title = "No Title"
+            import re
+            title_match = re.search(r"<title[^>]*>([^<]+)</title>", response.text, re.IGNORECASE)
+            if title_match:
+                title = title_match.group(1).strip()[:100]
+
+            # Create a placeholder image with page info
+            # This is a basic SVG that will be saved as the screenshot
+            status = response.status_code
+            svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+                <rect width="100%" height="100%" fill="#1a1a2e"/>
+                <rect x="20" y="20" width="760" height="60" rx="8" fill="#16213e"/>
+                <circle cx="50" cy="50" r="8" fill="#e94560"/>
+                <circle cx="75" cy="50" r="8" fill="#ffc107"/>
+                <circle cx="100" cy="50" r="8" fill="#4caf50"/>
+                <text x="130" y="55" fill="#94a3b8" font-family="Arial" font-size="14">{url[:80]}</text>
+                <rect x="20" y="100" width="760" height="480" rx="8" fill="#0f0f23"/>
+                <text x="400" y="300" fill="#6366f1" font-family="Arial" font-size="24" text-anchor="middle">{title[:50]}</text>
+                <text x="400" y="340" fill="#94a3b8" font-family="Arial" font-size="16" text-anchor="middle">HTTP {status}</text>
+                <text x="400" y="380" fill="#64748b" font-family="Arial" font-size="12" text-anchor="middle">Screenshot capture requires Playwright: pip install playwright && playwright install</text>
+            </svg>'''
+
+            # Convert SVG to PNG if possible, otherwise save SVG
+            png_path = output_path
+            try:
+                import cairosvg
+                cairosvg.svg2png(bytestring=svg_content.encode(), write_to=str(png_path))
+                return True
+            except ImportError:
+                # Save as SVG instead
+                svg_path = output_path.with_suffix('.svg')
+                with open(svg_path, 'w') as f:
+                    f.write(svg_content)
+                # Create a symlink or copy as PNG for compatibility
+                return False
+
+    except Exception:
+        return False
+
+
 async def capture_screenshot(
     url: str,
     output_dir: Path,
@@ -243,6 +336,10 @@ async def capture_screenshot(
 
     # 2. Try headless Chrome
     if await capture_with_chrome(url, output_path, timeout):
+        return str(output_path)
+
+    # 3. Try HTML-based preview (fallback)
+    if await capture_with_httpx_html(url, output_path, timeout):
         return str(output_path)
 
     return None

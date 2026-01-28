@@ -1104,8 +1104,10 @@ async def _combined_enrichment_module(session, config, orchestrator):
 async def _combined_web_module(session, config, orchestrator):
     """Combined web module that runs HTTP probing and screenshots."""
     from easd.modules.web.http_prober import run as http_probe_run
-    from easd.modules.web.screenshot import run as screenshot_run
+    from easd.modules.web.screenshot import capture_screenshot, check_screenshot_capabilities
     from easd.core.models import ModuleResult
+    from pathlib import Path
+    import asyncio
 
     result = ModuleResult(module_name="web")
 
@@ -1117,17 +1119,62 @@ async def _combined_web_module(session, config, orchestrator):
         result.findings.extend(http_result.findings)
 
     # Update session with web applications for screenshot module
-    session.web_applications.extend(result.web_applications)
+    session.web_applications = result.web_applications.copy()
 
     # Run screenshot capture
-    if config.modules.web.screenshot:
-        screenshot_result = await screenshot_run(session, config, orchestrator)
-        if screenshot_result:
-            # Update screenshot paths in web applications
-            for updated_app in screenshot_result.web_applications:
-                for app in result.web_applications:
-                    if app.url == updated_app.url:
-                        app.screenshot_path = updated_app.screenshot_path
+    if config.modules.web.screenshot and result.web_applications:
+        # Check available screenshot methods
+        capabilities = check_screenshot_capabilities()
+
+        if not any(capabilities.values()):
+            if orchestrator.console:
+                orchestrator.console.print(
+                    "[yellow]Screenshot capture unavailable. Install one of:[/yellow]\n"
+                    "  • Playwright: [cyan]pip install playwright && playwright install chromium[/cyan]\n"
+                    "  • Chrome/Chromium browser\n"
+                    "  • gowitness: [cyan]go install github.com/sensepost/gowitness@latest[/cyan]"
+                )
+        else:
+            screenshots_dir = config.get_screenshots_dir(session.id)
+            screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+            if orchestrator.console:
+                methods = [k for k, v in capabilities.items() if v]
+                orchestrator.console.print(f"[cyan]Capturing screenshots using: {', '.join(methods)}[/cyan]")
+
+            # Capture screenshots directly for each live web application
+            semaphore = asyncio.Semaphore(4)
+            live_apps = [app for app in result.web_applications if app.is_alive and app.status_code in range(200, 500)]
+
+            async def capture_for_webapp(webapp):
+                async with semaphore:
+                    url = webapp.final_url or webapp.url
+                    try:
+                        screenshot_path = await capture_screenshot(
+                            url,
+                            screenshots_dir,
+                            config.modules.web.screenshot_timeout,
+                        )
+                        if screenshot_path:
+                            webapp.screenshot_path = screenshot_path
+                    except Exception as e:
+                        pass
+                    return webapp
+
+            if live_apps:
+                if orchestrator.console:
+                    orchestrator.console.print(f"[cyan]Screenshotting {len(live_apps)} live web applications...[/cyan]")
+
+                # Capture all screenshots concurrently
+                await asyncio.gather(
+                    *[capture_for_webapp(app) for app in live_apps],
+                    return_exceptions=True
+                )
+
+                # Count successful screenshots
+                screenshot_count = sum(1 for app in result.web_applications if app.screenshot_path)
+                if orchestrator.console:
+                    orchestrator.console.print(f"[green]Captured {screenshot_count} screenshots[/green]")
 
     result.items_discovered = len(result.web_applications)
     return result
