@@ -297,72 +297,97 @@ async def run(
     credential_exposures = []
     total_breaches = 0
 
-    for email in list(emails_to_check)[:50]:  # Limit API calls
-        email_breaches = []
-        has_password_exposed = False
+    # Concurrent email checking with per-service rate limiting
+    semaphore = asyncio.Semaphore(5)  # Max 5 emails checked concurrently
 
-        # Check HIBP
-        if hibp_key:
-            breaches = await check_hibp_breaches(email, hibp_key, config.scan.timeout)
-            if breaches:
-                email_breaches.extend([b.get("Name", "Unknown") for b in breaches])
+    async def check_single_email(email: str) -> dict:
+        """Check a single email against all breach services concurrently."""
+        async with semaphore:
+            email_breaches = []
+            has_password_exposed = False
+            local_cred_exposures = []
 
-            pastes = await check_hibp_pastes(email, hibp_key, config.scan.timeout)
-            if pastes:
-                email_breaches.append(f"{len(pastes)} paste(s)")
+            # Run all API checks concurrently for this email
+            tasks = []
 
-            await asyncio.sleep(1.5)  # HIBP rate limit
+            if hibp_key:
+                tasks.append(("hibp_breaches", check_hibp_breaches(email, hibp_key, config.scan.timeout)))
+                tasks.append(("hibp_pastes", check_hibp_pastes(email, hibp_key, config.scan.timeout)))
 
-        # Check DeHashed (includes passwords)
-        if dehashed_key and dehashed_email:
-            entries = await check_dehashed(email, dehashed_key, dehashed_email, config.scan.timeout)
-            if entries:
-                for entry in entries:
-                    if entry.get("password") or entry.get("hashed_password"):
-                        has_password_exposed = True
-                        credential_exposures.append({
-                            "email": email,
-                            "source": entry.get("database_name", "Unknown"),
-                            "has_password": bool(entry.get("password")),
-                            "has_hash": bool(entry.get("hashed_password")),
-                        })
-                email_breaches.append(f"DeHashed: {len(entries)} entries")
+            if dehashed_key and dehashed_email:
+                tasks.append(("dehashed", check_dehashed(email, dehashed_key, dehashed_email, config.scan.timeout)))
 
+            if leakcheck_key:
+                tasks.append(("leakcheck", check_leakcheck(email, leakcheck_key, config.scan.timeout)))
+
+            if intelx_key:
+                tasks.append(("intelx", check_intelx(email, intelx_key, config.scan.timeout)))
+
+            if not hibp_key and not dehashed_key:
+                tasks.append(("breachdir", check_breach_directory(email, config.scan.timeout)))
+
+            # Execute all checks concurrently
+            if tasks:
+                task_names = [t[0] for t in tasks]
+                task_coros = [t[1] for t in tasks]
+                results = await asyncio.gather(*task_coros, return_exceptions=True)
+
+                for name, res in zip(task_names, results):
+                    if isinstance(res, Exception):
+                        continue
+
+                    if name == "hibp_breaches" and res:
+                        email_breaches.extend([b.get("Name", "Unknown") for b in res])
+                    elif name == "hibp_pastes" and res:
+                        email_breaches.append(f"{len(res)} paste(s)")
+                    elif name == "dehashed" and res:
+                        for entry in res:
+                            if entry.get("password") or entry.get("hashed_password"):
+                                has_password_exposed = True
+                                local_cred_exposures.append({
+                                    "email": email,
+                                    "source": entry.get("database_name", "Unknown"),
+                                    "has_password": bool(entry.get("password")),
+                                    "has_hash": bool(entry.get("hashed_password")),
+                                })
+                        email_breaches.append(f"DeHashed: {len(res)} entries")
+                    elif name == "leakcheck" and res:
+                        email_breaches.extend(res)
+                    elif name == "intelx" and isinstance(res, dict) and res.get("records", 0) > 0:
+                        email_breaches.append(f"IntelX: {res['records']} records")
+                    elif name == "breachdir" and res:
+                        email_breaches.extend(res[:5])
+
+            # Small delay to respect rate limits
             await asyncio.sleep(0.5)
 
-        # Check LeakCheck
-        if leakcheck_key:
-            sources = await check_leakcheck(email, leakcheck_key, config.scan.timeout)
-            if sources:
-                email_breaches.extend(sources)
-
-            await asyncio.sleep(0.5)
-
-        # Check IntelX
-        if intelx_key:
-            intelx_results = await check_intelx(email, intelx_key, config.scan.timeout)
-            if intelx_results.get("records", 0) > 0:
-                email_breaches.append(f"IntelX: {intelx_results['records']} records")
-
-            await asyncio.sleep(1)
-
-        # Free check - BreachDirectory
-        if not hibp_key and not dehashed_key:
-            sources = await check_breach_directory(email, config.scan.timeout)
-            if sources:
-                email_breaches.extend(sources[:5])
-
-            await asyncio.sleep(1)
-
-        if email_breaches:
-            breached_emails.append({
+            return {
                 "email": email,
                 "breaches": list(set(email_breaches)),
                 "breach_count": len(email_breaches),
                 "password_exposed": has_password_exposed,
+                "cred_exposures": local_cred_exposures,
+            }
+
+    # Check all emails concurrently
+    email_results = await asyncio.gather(
+        *[check_single_email(email) for email in list(emails_to_check)[:50]],
+        return_exceptions=True
+    )
+
+    for res in email_results:
+        if isinstance(res, Exception):
+            continue
+        if res.get("breaches"):
+            breached_emails.append({
+                "email": res["email"],
+                "breaches": res["breaches"],
+                "breach_count": res["breach_count"],
+                "password_exposed": res["password_exposed"],
             })
-            total_breaches += len(email_breaches)
+            total_breaches += res["breach_count"]
             result.items_discovered += 1
+        credential_exposures.extend(res.get("cred_exposures", []))
 
     # Store results
     if not hasattr(session, 'breach_data'):

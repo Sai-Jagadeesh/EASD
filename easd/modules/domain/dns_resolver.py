@@ -74,11 +74,13 @@ async def resolve_hostname(
 
 
 async def get_all_dns_records(hostname: str, timeout: float = 5.0) -> list[DNSRecord]:
-    """Get all DNS records for a hostname."""
+    """Get all DNS records for a hostname concurrently."""
     records = []
     record_types = ["A", "AAAA", "MX", "TXT", "CNAME", "NS"]
 
-    for rtype in record_types:
+    # Resolve all record types concurrently for speed
+    async def resolve_type(rtype: str) -> list[DNSRecord]:
+        type_records = []
         try:
             values = await resolve_hostname(hostname, rtype, timeout)
             for value in values:
@@ -86,13 +88,20 @@ async def get_all_dns_records(hostname: str, timeout: float = 5.0) -> list[DNSRe
                     record_type=rtype,
                     value=value,
                 )
-                # Get priority for MX records
-                if rtype == "MX":
-                    # Priority is part of the MX record resolution
-                    pass
-                records.append(record)
+                type_records.append(record)
         except Exception:
-            continue
+            pass
+        return type_records
+
+    # Run all DNS queries concurrently
+    results = await asyncio.gather(
+        *[resolve_type(rtype) for rtype in record_types],
+        return_exceptions=True
+    )
+
+    for res in results:
+        if isinstance(res, list):
+            records.extend(res)
 
     return records
 
@@ -109,29 +118,42 @@ async def resolve_subdomain(
     """
     ips = []
 
-    # Resolve A records
-    a_records = await resolve_hostname(subdomain.fqdn, "A", timeout)
-    ips.extend(a_records)
+    # Resolve A, AAAA, and CNAME records concurrently
+    a_task = resolve_hostname(subdomain.fqdn, "A", timeout)
+    aaaa_task = resolve_hostname(subdomain.fqdn, "AAAA", timeout)
+    cname_task = resolve_hostname(subdomain.fqdn, "CNAME", timeout)
 
-    # Resolve AAAA records
-    aaaa_records = await resolve_hostname(subdomain.fqdn, "AAAA", timeout)
-    ips.extend(aaaa_records)
+    a_records, aaaa_records, cnames = await asyncio.gather(
+        a_task, aaaa_task, cname_task, return_exceptions=True
+    )
 
-    # Check for CNAME chain
+    if isinstance(a_records, list):
+        ips.extend(a_records)
+    if isinstance(aaaa_records, list):
+        ips.extend(aaaa_records)
+
+    # Follow CNAME chain if needed
     cname_chain = []
-    current = subdomain.fqdn
-    max_depth = 10
+    if isinstance(cnames, list) and cnames:
+        cname_chain.extend(cnames)
+        current = cnames[0]
+        max_depth = 10
 
-    for _ in range(max_depth):
-        cnames = await resolve_hostname(current, "CNAME", timeout)
-        if cnames:
-            cname_chain.extend(cnames)
-            current = cnames[0]
-            # Also resolve the CNAME target
-            cname_ips = await resolve_hostname(current, "A", timeout)
-            ips.extend(cname_ips)
-        else:
-            break
+        for _ in range(max_depth - 1):
+            cname_results, cname_ips = await asyncio.gather(
+                resolve_hostname(current, "CNAME", timeout),
+                resolve_hostname(current, "A", timeout),
+                return_exceptions=True
+            )
+
+            if isinstance(cname_ips, list):
+                ips.extend(cname_ips)
+
+            if isinstance(cname_results, list) and cname_results:
+                cname_chain.extend(cname_results)
+                current = cname_results[0]
+            else:
+                break
 
     subdomain.resolved_ips = list(set(ips))
     subdomain.cname_chain = cname_chain

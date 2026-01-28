@@ -52,7 +52,7 @@ class SubdomainConfig(BaseModel):
     wordlist: str = ""
     resolvers: str = ""
     bruteforce: bool = True
-    bruteforce_threads: int = 50
+    bruteforce_threads: int = 200  # Increased for faster DNS bruteforce
     recursive: bool = False
     max_depth: int = 2
 
@@ -88,10 +88,10 @@ class CloudConfig(BaseModel):
 class ScanConfig(BaseModel):
     """General scan settings."""
     intensity: str = "normal"  # passive, normal, aggressive
-    rate_limit: int = 500  # requests/packets per second
+    rate_limit: int = 1000  # requests/packets per second
     timeout: int = 10  # seconds
     retries: int = 2
-    threads: int = 50
+    threads: int = 200  # Increased for better parallelism
     delay_between_requests: float = 0.0
 
 

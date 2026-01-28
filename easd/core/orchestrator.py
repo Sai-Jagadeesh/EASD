@@ -157,11 +157,22 @@ class Orchestrator:
         self.session = self.db.get_session(session_id)
         return self.session
 
+    # Module execution phases for parallel execution
+    # Modules in the same phase can run concurrently
+    MODULE_PHASES = [
+        ["seed"],                                          # Phase 1: Initial discovery
+        ["domain", "osint"],                               # Phase 2: Subdomain + OSINT (parallel)
+        ["dns"],                                           # Phase 3: DNS resolution
+        ["infrastructure", "enrichment", "intel", "web", "cloud"],  # Phase 4: All enrichment (parallel)
+        ["correlation"],                                   # Phase 5: Final correlation
+    ]
+
     async def run(self) -> ScanSession:
         """
-        Run the discovery pipeline.
+        Run the discovery pipeline with parallel module execution.
 
-        Executes all enabled modules in order, collecting and correlating results.
+        Modules are grouped into phases based on dependencies.
+        Within each phase, modules run concurrently for maximum speed.
 
         Returns:
             Completed ScanSession with all discovered data
@@ -178,46 +189,41 @@ class Orchestrator:
 
         try:
             # Filter modules based on passive_only mode
-            modules_to_run = self._get_modules_to_run()
+            modules_to_run = set(self._get_modules_to_run())
 
-            # Run each module in order
-            for module_name in modules_to_run:
-                if module_name not in self._modules:
-                    self.console.print(
-                        f"[yellow]Warning: Module '{module_name}' not registered, skipping[/yellow]"
-                    )
+            # Run phases sequentially, modules within phases in parallel
+            for phase in self.MODULE_PHASES:
+                # Get modules in this phase that should run
+                phase_modules = [m for m in phase if m in modules_to_run and m in self._modules]
+
+                if not phase_modules:
                     continue
 
-                # Notify module start
-                for callback in self._on_module_start:
-                    callback(module_name)
+                # Notify module starts
+                for module_name in phase_modules:
+                    for callback in self._on_module_start:
+                        callback(module_name)
 
-                # Execute module
-                try:
-                    result = await self._run_module(module_name)
-                    self.session.module_results.append(result)
-
-                    # Merge results into session
-                    self._merge_module_result(result)
-
-                    # Notify module complete
-                    for callback in self._on_module_complete:
-                        callback(module_name, result)
-
-                except Exception as e:
-                    self.console.print(f"[red]Error in module '{module_name}': {e}[/red]")
-                    result = ModuleResult(
-                        module_name=module_name,
-                        success=False,
-                        error_message=str(e),
-                        completed_at=datetime.utcnow(),
-                    )
-                    self.session.module_results.append(result)
+                # Run all modules in this phase concurrently
+                if len(phase_modules) == 1:
+                    # Single module - run directly
+                    await self._execute_module(phase_modules[0])
+                else:
+                    # Multiple modules - run in parallel
+                    tasks = [self._execute_module(m) for m in phase_modules]
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
             # Update final statistics
             self.session.update_statistics()
             self.session.status = ScanStatus.COMPLETED
             self.db.update_session(self.session)
+
+            # Cleanup HTTP clients
+            try:
+                from easd.utils.http_client import cleanup_http_clients
+                await cleanup_http_clients()
+            except Exception:
+                pass
 
         except Exception as e:
             self.session.status = ScanStatus.FAILED
@@ -225,6 +231,29 @@ class Orchestrator:
             raise
 
         return self.session
+
+    async def _execute_module(self, module_name: str) -> None:
+        """Execute a single module with error handling and result merging."""
+        try:
+            result = await self._run_module(module_name)
+            self.session.module_results.append(result)
+
+            # Merge results into session (thread-safe)
+            self._merge_module_result(result)
+
+            # Notify module complete
+            for callback in self._on_module_complete:
+                callback(module_name, result)
+
+        except Exception as e:
+            self.console.print(f"[red]Error in module '{module_name}': {e}[/red]")
+            result = ModuleResult(
+                module_name=module_name,
+                success=False,
+                error_message=str(e),
+                completed_at=datetime.utcnow(),
+            )
+            self.session.module_results.append(result)
 
     def _get_modules_to_run(self) -> list[str]:
         """Get the list of modules to run based on configuration."""
@@ -272,24 +301,32 @@ class Orchestrator:
         return result
 
     def _merge_module_result(self, result: ModuleResult) -> None:
-        """Merge module results into the session."""
+        """Merge module results into the session using O(1) lookups."""
+        # Build lookup sets for O(1) membership testing
+        existing_domains = {d.fqdn for d in self.session.domains}
+        existing_subdomains = {s.fqdn for s in self.session.subdomains}
+        existing_ips = {ip.address for ip in self.session.ip_addresses}
+
         # Merge domains
         for domain in result.domains:
-            if domain.fqdn not in [d.fqdn for d in self.session.domains]:
+            if domain.fqdn not in existing_domains:
                 self.session.domains.append(domain)
                 self.db.add_domain(self.session.id, domain)
+                existing_domains.add(domain.fqdn)
 
         # Merge subdomains
         for subdomain in result.subdomains:
-            if not self.db.subdomain_exists(self.session.id, subdomain.fqdn):
+            if subdomain.fqdn not in existing_subdomains:
                 self.session.subdomains.append(subdomain)
                 self.db.add_subdomain(self.session.id, subdomain)
+                existing_subdomains.add(subdomain.fqdn)
 
         # Merge IP addresses
         for ip in result.ip_addresses:
-            if not self.db.ip_exists(self.session.id, ip.address):
+            if ip.address not in existing_ips:
                 self.session.ip_addresses.append(ip)
                 self.db.add_ip_address(self.session.id, ip)
+                existing_ips.add(ip.address)
 
         # Merge web applications
         for webapp in result.web_applications:

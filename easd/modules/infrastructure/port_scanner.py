@@ -591,9 +591,9 @@ async def run(
         ports_to_scan.extend(config.modules.ports.custom_ports)
     ports_to_scan = list(set(ports_to_scan))
 
-    # Check if we should use masscan for speed
+    # Check if we should use masscan for speed (enabled for normal+ intensity)
     masscan_results = {}
-    if len(ips_to_scan) > 10 and config.scan.intensity == "aggressive":
+    if len(ips_to_scan) > 5 and config.scan.intensity in ("normal", "aggressive"):
         port_range = ",".join(str(p) for p in ports_to_scan)
         masscan_results = await run_masscan(
             ips_to_scan,
@@ -601,26 +601,46 @@ async def run(
             config.scan.rate_limit,
         )
 
-    # Scan each IP
-    for ip_addr in ips_to_scan:
-        # Check scope
-        if not config.is_in_scope(ip_addr):
+    # Scan multiple IPs concurrently
+    ip_semaphore = asyncio.Semaphore(10)  # Max 10 IPs scanned concurrently
+
+    async def scan_single_ip(ip_addr: str) -> tuple:
+        """Scan a single IP and return results."""
+        async with ip_semaphore:
+            # Check scope
+            if not config.is_in_scope(ip_addr):
+                return (ip_addr, [], [])
+
+            # Get ports to scan for this IP
+            if ip_addr in masscan_results:
+                ip_ports = masscan_results[ip_addr]
+            else:
+                ip_ports = ports_to_scan
+
+            # Scan ports
+            open_ports = await scan_ip_ports(
+                ip_addr,
+                ip_ports,
+                timeout=config.scan.timeout,
+                concurrency=config.scan.threads,
+            )
+
+            return (ip_addr, open_ports, [])
+
+    # Scan all IPs concurrently
+    scan_results = await asyncio.gather(
+        *[scan_single_ip(ip) for ip in ips_to_scan],
+        return_exceptions=True
+    )
+
+    # Process results
+    for res in scan_results:
+        if isinstance(res, Exception):
             continue
 
-        # Get ports to scan for this IP
-        if ip_addr in masscan_results:
-            # Masscan found open ports, just verify them
-            ip_ports = masscan_results[ip_addr]
-        else:
-            ip_ports = ports_to_scan
-
-        # Scan ports
-        open_ports = await scan_ip_ports(
-            ip_addr,
-            ip_ports,
-            timeout=config.scan.timeout,
-            concurrency=config.scan.threads,
-        )
+        ip_addr, open_ports, _ = res
+        if not open_ports:
+            continue
 
         # Find or create IP record
         existing_ip = next(
