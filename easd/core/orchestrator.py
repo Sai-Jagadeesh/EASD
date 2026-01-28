@@ -257,7 +257,9 @@ class Orchestrator:
 
     def _get_modules_to_run(self) -> list[str]:
         """Get the list of modules to run based on configuration."""
-        passive_modules = {"seed", "domain", "dns", "enrichment", "correlation"}
+        # Web is included in passive because HTTP probing is minimally intrusive
+        # and needed for screenshots and tech detection
+        passive_modules = {"seed", "domain", "dns", "enrichment", "intel", "osint", "web", "correlation"}
 
         modules = []
         for module in self.MODULE_ORDER:

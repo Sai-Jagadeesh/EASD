@@ -1177,6 +1177,7 @@ async def _combined_web_module(session, config, orchestrator):
                     orchestrator.console.print(f"[green]Captured {screenshot_count} screenshots[/green]")
 
     result.items_discovered = len(result.web_applications)
+    result.success = True
     return result
 
 
