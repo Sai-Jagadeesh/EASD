@@ -314,12 +314,21 @@ class Orchestrator:
                 self.db.add_domain(self.session.id, domain)
                 existing_domains.add(domain.fqdn)
 
-        # Merge subdomains
+        # Merge subdomains (add new ones, update existing with resolved data)
         for subdomain in result.subdomains:
             if subdomain.fqdn not in existing_subdomains:
                 self.session.subdomains.append(subdomain)
                 self.db.add_subdomain(self.session.id, subdomain)
                 existing_subdomains.add(subdomain.fqdn)
+            else:
+                # Update existing subdomain with resolved IPs and is_alive status
+                for existing in self.session.subdomains:
+                    if existing.fqdn == subdomain.fqdn:
+                        existing.resolved_ips = subdomain.resolved_ips
+                        existing.is_alive = subdomain.is_alive
+                        existing.cname_chain = subdomain.cname_chain
+                        break
+                self.db.update_subdomain(self.session.id, subdomain)
 
         # Merge IP addresses
         for ip in result.ip_addresses:

@@ -169,6 +169,16 @@ class Database:
         )
         return len(result) > 0
 
+    def update_subdomain(self, session_id: str, subdomain: "Subdomain") -> None:
+        """Update an existing subdomain with new data (e.g., resolved IPs)."""
+        SubdomainQuery = Query()
+        data = json.loads(subdomain.model_dump_json())
+        data["session_id"] = session_id
+        self.subdomains.update(
+            data,
+            (SubdomainQuery.session_id == session_id) & (SubdomainQuery.fqdn == subdomain.fqdn)
+        )
+
     # IP Address operations
     def add_ip_address(self, session_id: str, ip: IPAddress) -> None:
         """Add an IP address to a session."""
@@ -235,6 +245,16 @@ class Database:
             WebApplication(**{k: v for k, v in r.items() if k != "session_id"})
             for r in results
         ]
+
+    def update_web_application(self, session_id: str, webapp: WebApplication) -> None:
+        """Update a web application (e.g., with screenshot path)."""
+        WebAppQuery = Query()
+        data = json.loads(webapp.model_dump_json())
+        data["session_id"] = session_id
+        self.web_applications.update(
+            data,
+            (WebAppQuery.session_id == session_id) & (WebAppQuery.url == webapp.url)
+        )
 
     # Cloud Asset operations
     def add_cloud_asset(self, session_id: str, asset: CloudAsset) -> None:
