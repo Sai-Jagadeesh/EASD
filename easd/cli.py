@@ -111,6 +111,7 @@ def run_interactive_wizard():
         ("dns", "DNS Resolution", "Resolve discovered domains to IPs"),
         ("infrastructure", "Port Scanning", "Discover open ports and services (SFTP, FTP, SMB, etc.)"),
         ("enrichment", "Enrichment", "Shodan, Censys, SecurityTrails lookups"),
+        ("intel", "Intelligence", "URLScan, GreyNoise, Wayback, breach data, CVEs"),
         ("osint", "OSINT", "GitHub repos, commits, employees, leaked secrets"),
         ("web", "Web Probing", "HTTP probing, tech detection, screenshots"),
         ("cloud", "Cloud Assets", "S3 buckets, Azure blobs, GCP storage"),
@@ -789,6 +790,100 @@ def _run_api_key_setup(config_path: Path):
             "url": "https://app.binaryedge.io/account/api",
             "env_var": "BINARYEDGE_API_KEY",
         },
+        # Intelligence Platforms
+        {
+            "name": "URLScan.io",
+            "attr": "urlscan",
+            "description": "URL scanning and analysis service",
+            "features": "Screenshots, DOM analysis, tech detection, network requests",
+            "url": "https://urlscan.io/user/signup",
+            "env_var": "URLSCAN_API_KEY",
+        },
+        {
+            "name": "GreyNoise",
+            "attr": "greynoise",
+            "description": "Internet scanner and noise identification",
+            "features": "Identify scanners, malicious IPs, benign crawlers",
+            "url": "https://viz.greynoise.io/account/api-key",
+            "env_var": "GREYNOISE_API_KEY",
+        },
+        {
+            "name": "AlienVault OTX",
+            "attr": "alienvault",
+            "description": "Open Threat Exchange - threat intelligence",
+            "features": "IOCs, threat pulses, malware associations",
+            "url": "https://otx.alienvault.com/api",
+            "env_var": "ALIENVAULT_API_KEY",
+        },
+        {
+            "name": "IPinfo",
+            "attr": "ipinfo",
+            "description": "IP geolocation and ASN data",
+            "features": "Geolocation, company detection, VPN/proxy detection",
+            "url": "https://ipinfo.io/signup",
+            "env_var": "IPINFO_TOKEN",
+        },
+        {
+            "name": "BuiltWith",
+            "attr": "builtwith",
+            "description": "Technology profiling service",
+            "features": "Detailed tech stack, frameworks, analytics, CMS",
+            "url": "https://builtwith.com/",
+            "env_var": "BUILTWITH_API_KEY",
+        },
+        {
+            "name": "Chaos (ProjectDiscovery)",
+            "attr": "chaos",
+            "description": "Massive subdomain database",
+            "features": "Subdomain discovery, bug bounty programs",
+            "url": "https://chaos.projectdiscovery.io/",
+            "env_var": "CHAOS_API_KEY",
+        },
+        {
+            "name": "PassiveTotal",
+            "attr": "passivetotal",
+            "attr2": "passivetotal_user",
+            "description": "RiskIQ PassiveTotal - passive DNS and WHOIS",
+            "features": "Passive DNS, WHOIS history, certificates, trackers",
+            "url": "https://community.riskiq.com/",
+            "env_var": "PASSIVETOTAL_API_KEY / PASSIVETOTAL_USER",
+            "is_pair": True,
+        },
+        # Breach Checking
+        {
+            "name": "HaveIBeenPwned",
+            "attr": "hibp",
+            "description": "Breach notification service",
+            "features": "Check if emails appear in data breaches",
+            "url": "https://haveibeenpwned.com/API/Key",
+            "env_var": "HIBP_API_KEY",
+        },
+        {
+            "name": "DeHashed",
+            "attr": "dehashed",
+            "attr2": "dehashed_email",
+            "description": "Breach database with credentials",
+            "features": "Search breaches for emails, passwords, usernames",
+            "url": "https://dehashed.com/",
+            "env_var": "DEHASHED_API_KEY / DEHASHED_EMAIL",
+            "is_pair": True,
+        },
+        {
+            "name": "LeakCheck",
+            "attr": "leakcheck",
+            "description": "Credential leak checking",
+            "features": "Check emails in breach databases",
+            "url": "https://leakcheck.io/",
+            "env_var": "LEAKCHECK_API_KEY",
+        },
+        {
+            "name": "Intelligence X",
+            "attr": "intelx",
+            "description": "Dark web and breach intelligence",
+            "features": "Paste sites, dark web, breach data",
+            "url": "https://intelx.io/",
+            "env_var": "INTELX_API_KEY",
+        },
     ]
 
     changes_made = False
@@ -933,6 +1028,7 @@ def _register_modules(orchestrator: Orchestrator) -> None:
     orchestrator.register_module("dns", dns_run)
     orchestrator.register_module("infrastructure", port_scan_run)
     orchestrator.register_module("enrichment", _combined_enrichment_module)
+    orchestrator.register_module("intel", _combined_intel_module)
     orchestrator.register_module("osint", _combined_osint_module)
     orchestrator.register_module("web", _combined_web_module)
     orchestrator.register_module("cloud", cloud_enum_run)
@@ -1034,6 +1130,122 @@ async def _combined_web_module(session, config, orchestrator):
                         app.screenshot_path = updated_app.screenshot_path
 
     result.items_discovered = len(result.web_applications)
+    return result
+
+
+async def _combined_intel_module(session, config, orchestrator):
+    """Combined intelligence module for threat intel and breach checking."""
+    from easd.core.models import ModuleResult
+
+    result = ModuleResult(module_name="intel")
+
+    # Shodan InternetDB (free, no auth) - CVEs and ports
+    try:
+        from easd.modules.intel.shodan_internetdb import run as internetdb_run
+        internetdb_result = await internetdb_run(session, config, orchestrator)
+        if internetdb_result:
+            result.findings.extend(internetdb_result.findings)
+            result.items_discovered += internetdb_result.items_discovered
+    except Exception:
+        pass
+
+    # Wayback Machine (free) - historical URLs
+    try:
+        from easd.modules.intel.wayback import run as wayback_run
+        wayback_result = await wayback_run(session, config, orchestrator)
+        if wayback_result:
+            result.findings.extend(wayback_result.findings)
+            result.items_discovered += wayback_result.items_discovered
+    except Exception:
+        pass
+
+    # AlienVault OTX (free) - threat intel
+    try:
+        from easd.modules.intel.alienvault_otx import run as otx_run
+        otx_result = await otx_run(session, config, orchestrator)
+        if otx_result:
+            result.findings.extend(otx_result.findings)
+            result.items_discovered += otx_result.items_discovered
+    except Exception:
+        pass
+
+    # URLScan.io
+    if config.api_keys.urlscan:
+        try:
+            from easd.modules.intel.urlscan import run as urlscan_run
+            urlscan_result = await urlscan_run(session, config, orchestrator)
+            if urlscan_result:
+                result.findings.extend(urlscan_result.findings)
+                result.items_discovered += urlscan_result.items_discovered
+        except Exception:
+            pass
+
+    # GreyNoise
+    try:
+        from easd.modules.intel.greynoise import run as greynoise_run
+        greynoise_result = await greynoise_run(session, config, orchestrator)
+        if greynoise_result:
+            result.findings.extend(greynoise_result.findings)
+            result.items_discovered += greynoise_result.items_discovered
+    except Exception:
+        pass
+
+    # IPinfo
+    if config.api_keys.ipinfo:
+        try:
+            from easd.modules.intel.ipinfo import run as ipinfo_run
+            ipinfo_result = await ipinfo_run(session, config, orchestrator)
+            if ipinfo_result:
+                result.findings.extend(ipinfo_result.findings)
+                result.items_discovered += ipinfo_result.items_discovered
+        except Exception:
+            pass
+
+    # Chaos (ProjectDiscovery)
+    if config.api_keys.chaos:
+        try:
+            from easd.modules.intel.chaos_projectdiscovery import run as chaos_run
+            chaos_result = await chaos_run(session, config, orchestrator)
+            if chaos_result:
+                result.subdomains.extend(chaos_result.subdomains)
+                result.findings.extend(chaos_result.findings)
+                result.items_discovered += chaos_result.items_discovered
+        except Exception:
+            pass
+
+    # PassiveTotal
+    if config.api_keys.passivetotal:
+        try:
+            from easd.modules.intel.passivetotal import run as pt_run
+            pt_result = await pt_run(session, config, orchestrator)
+            if pt_result:
+                result.subdomains.extend(pt_result.subdomains)
+                result.findings.extend(pt_result.findings)
+                result.items_discovered += pt_result.items_discovered
+        except Exception:
+            pass
+
+    # BuiltWith
+    try:
+        from easd.modules.intel.builtwith import run as builtwith_run
+        builtwith_result = await builtwith_run(session, config, orchestrator)
+        if builtwith_result:
+            result.findings.extend(builtwith_result.findings)
+            result.items_discovered += builtwith_result.items_discovered
+    except Exception:
+        pass
+
+    # Breach checking (after OSINT has gathered emails)
+    if config.api_keys.hibp or config.api_keys.dehashed or config.api_keys.leakcheck:
+        try:
+            from easd.modules.intel.breach_check import run as breach_run
+            breach_result = await breach_run(session, config, orchestrator)
+            if breach_result:
+                result.findings.extend(breach_result.findings)
+                result.items_discovered += breach_result.items_discovered
+        except Exception:
+            pass
+
     return result
 
 

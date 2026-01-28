@@ -15,14 +15,36 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class APIKeys(BaseModel):
     """API keys for external services."""
+    # Core enrichment
     shodan: str = ""
     censys_id: str = ""
     censys_secret: str = ""
     securitytrails: str = ""
     virustotal: str = ""
-    hunter: str = ""
     binaryedge: str = ""
-    github: str = ""  # GitHub personal access token for API access
+
+    # OSINT
+    hunter: str = ""
+    github: str = ""
+
+    # Intelligence platforms
+    urlscan: str = ""
+    greynoise: str = ""
+    alienvault: str = ""
+    ipinfo: str = ""
+    builtwith: str = ""
+    chaos: str = ""  # ProjectDiscovery Chaos
+
+    # PassiveTotal / RiskIQ
+    passivetotal: str = ""
+    passivetotal_user: str = ""
+
+    # Breach checking
+    hibp: str = ""  # HaveIBeenPwned
+    dehashed: str = ""
+    dehashed_email: str = ""
+    leakcheck: str = ""
+    intelx: str = ""  # Intelligence X
 
 
 class SubdomainConfig(BaseModel):
@@ -172,14 +194,31 @@ class EASDConfig(BaseSettings):
     def _load_env_overrides(self) -> None:
         """Load API keys from environment variables."""
         env_mappings = {
+            # Core
             "SHODAN_API_KEY": "shodan",
             "CENSYS_API_ID": "censys_id",
             "CENSYS_API_SECRET": "censys_secret",
             "SECURITYTRAILS_API_KEY": "securitytrails",
             "VIRUSTOTAL_API_KEY": "virustotal",
-            "HUNTER_API_KEY": "hunter",
             "BINARYEDGE_API_KEY": "binaryedge",
+            # OSINT
+            "HUNTER_API_KEY": "hunter",
             "GITHUB_TOKEN": "github",
+            # Intel platforms
+            "URLSCAN_API_KEY": "urlscan",
+            "GREYNOISE_API_KEY": "greynoise",
+            "ALIENVAULT_API_KEY": "alienvault",
+            "IPINFO_TOKEN": "ipinfo",
+            "BUILTWITH_API_KEY": "builtwith",
+            "CHAOS_API_KEY": "chaos",
+            "PASSIVETOTAL_API_KEY": "passivetotal",
+            "PASSIVETOTAL_USER": "passivetotal_user",
+            # Breach checking
+            "HIBP_API_KEY": "hibp",
+            "DEHASHED_API_KEY": "dehashed",
+            "DEHASHED_EMAIL": "dehashed_email",
+            "LEAKCHECK_API_KEY": "leakcheck",
+            "INTELX_API_KEY": "intelx",
         }
 
         for env_var, key_name in env_mappings.items():

@@ -40,6 +40,7 @@ class Orchestrator:
         "dns",            # DNS resolution
         "infrastructure", # Port scanning, service detection
         "enrichment",     # Shodan, Censys enrichment
+        "intel",          # Threat intel, CVEs, breach data
         "osint",          # GitHub recon, employee discovery
         "web",            # Web application discovery
         "cloud",          # Cloud asset enumeration
