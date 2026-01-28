@@ -334,9 +334,20 @@ screenshots/
 - Python 3.10+
 - Dependencies: httpx, typer, rich, pydantic, tinydb, dnspython, netaddr
 
-Optional:
-- masscan (for fast port scanning)
-- gowitness/playwright (for screenshots)
+### Optional Tools
+
+**For Screenshots (recommended - Playwright):**
+```bash
+pip install playwright
+playwright install chromium
+```
+
+**Alternative screenshot methods:**
+- Chrome/Chromium browser (auto-detected)
+- gowitness: `go install github.com/sensepost/gowitness@latest`
+
+**For Fast Port Scanning:**
+- masscan (used automatically in normal/aggressive modes)
 
 ## License
 
