@@ -1,6 +1,6 @@
 # EASD - External Attack Surface Discovery
 
-A comprehensive external attack surface discovery tool designed for red team engagements. Provide a company name or domain, and EASD will automatically discover websites, applications, exposed services, cloud assets, employees, and potential vulnerabilities.
+A comprehensive external attack surface discovery tool designed for red team engagements. Provide a company name or domain, and EASD will automatically discover websites, applications, exposed services, cloud assets, employees, leaked credentials, and potential vulnerabilities.
 
 ## Features
 
@@ -15,13 +15,32 @@ A comprehensive external attack surface discovery tool designed for red team eng
 - **GitHub Intelligence** - Organization repos, commit history, leaked secrets in code
 - **Employee Discovery** - Email patterns, names, positions via Hunter.io
 - **Secret Detection** - API keys, AWS credentials, database passwords, private keys
+- **Credential Exposure** - Check employee emails against breach databases
 
-### Integrations
+### Intelligence Platforms
+- **Shodan InternetDB** - CVEs, open ports, hostnames (free, no auth)
+- **Wayback Machine** - Historical URLs, config files, backup files, old APIs
+- **AlienVault OTX** - Threat pulses, IOCs, malware associations
+- **URLScan.io** - Screenshots, DOM analysis, technology detection
+- **GreyNoise** - Scanner identification, malicious IP detection
+- **IPinfo** - Geolocation, ASN, VPN/proxy detection
+- **BuiltWith** - Detailed technology stack profiling
+- **Chaos (ProjectDiscovery)** - Massive subdomain database
+- **PassiveTotal/RiskIQ** - Passive DNS, WHOIS history
+
+### Breach & Credential Checking
+- **HaveIBeenPwned** - Check if employee emails appear in breaches
+- **DeHashed** - Search breach databases for exposed credentials
+- **LeakCheck** - Credential leak verification
+- **Intelligence X** - Dark web, paste sites, breach data
+
+### Core Integrations
 - Shodan - IP enrichment, service detection, vulnerabilities
 - Censys - Certificate transparency, host discovery
 - SecurityTrails - DNS history, subdomain intelligence
 - Hunter.io - Employee and email discovery
 - VirusTotal - Domain/IP reputation
+- BinaryEdge - Internet scanning data
 
 ### Reporting
 - Professional HTML reports with dark theme
@@ -52,7 +71,7 @@ easd
 # Or start a scan directly
 easd scan -c "Acme Corp" -d acme.com
 
-# Setup API keys (interactive)
+# Setup API keys (interactive wizard)
 easd setup
 ```
 
@@ -110,7 +129,7 @@ easd report <session-id> --format csv       # CSV export
 easd setup
 ```
 
-Walks you through configuring all API keys with descriptions and links.
+Walks you through configuring all 20+ API keys with descriptions and signup links.
 
 ### Manual Configuration
 
@@ -119,13 +138,33 @@ Create `config/config.yaml`:
 ```yaml
 easd:
   api_keys:
+    # Core
     shodan: "your-shodan-key"
     censys_id: "your-censys-id"
     censys_secret: "your-censys-secret"
     securitytrails: "your-securitytrails-key"
+    virustotal: "your-virustotal-key"
+
+    # OSINT
     hunter: "your-hunter-key"
     github: "your-github-token"
-    virustotal: "your-virustotal-key"
+
+    # Intelligence
+    urlscan: "your-urlscan-key"
+    greynoise: "your-greynoise-key"
+    alienvault: "your-otx-key"
+    ipinfo: "your-ipinfo-token"
+    builtwith: "your-builtwith-key"
+    chaos: "your-chaos-key"
+    passivetotal: "your-passivetotal-key"
+    passivetotal_user: "your-email"
+
+    # Breach Checking
+    hibp: "your-hibp-key"
+    dehashed: "your-dehashed-key"
+    dehashed_email: "your-email"
+    leakcheck: "your-leakcheck-key"
+    intelx: "your-intelx-key"
 
   scan:
     intensity: normal
@@ -137,13 +176,33 @@ easd:
 ### Environment Variables
 
 ```bash
+# Core
 export SHODAN_API_KEY="xxx"
 export CENSYS_API_ID="xxx"
 export CENSYS_API_SECRET="xxx"
 export SECURITYTRAILS_API_KEY="xxx"
+export VIRUSTOTAL_API_KEY="xxx"
+
+# OSINT
 export HUNTER_API_KEY="xxx"
 export GITHUB_TOKEN="xxx"
-export VIRUSTOTAL_API_KEY="xxx"
+
+# Intelligence
+export URLSCAN_API_KEY="xxx"
+export GREYNOISE_API_KEY="xxx"
+export ALIENVAULT_API_KEY="xxx"
+export IPINFO_TOKEN="xxx"
+export BUILTWITH_API_KEY="xxx"
+export CHAOS_API_KEY="xxx"
+export PASSIVETOTAL_API_KEY="xxx"
+export PASSIVETOTAL_USER="xxx"
+
+# Breach Checking
+export HIBP_API_KEY="xxx"
+export DEHASHED_API_KEY="xxx"
+export DEHASHED_EMAIL="xxx"
+export LEAKCHECK_API_KEY="xxx"
+export INTELX_API_KEY="xxx"
 ```
 
 ## Modules
@@ -155,6 +214,7 @@ export VIRUSTOTAL_API_KEY="xxx"
 | `dns` | DNS resolution for discovered domains | Active |
 | `infrastructure` | Port scanning, service detection | Active |
 | `enrichment` | Shodan, Censys, SecurityTrails lookups | Passive |
+| `intel` | URLScan, GreyNoise, Wayback, CVEs, breach data | Passive |
 | `osint` | GitHub repos, commits, employee discovery | Passive |
 | `web` | HTTP probing, tech detection, screenshots | Active |
 | `cloud` | S3/Azure/GCP bucket enumeration | Active |
@@ -190,6 +250,16 @@ GitHub reconnaissance scans for:
 | JWT Secrets | HIGH |
 | Slack/Discord Tokens | HIGH |
 
+## Credential Exposure Detection
+
+The breach checking module:
+1. Collects employee emails from Hunter.io and GitHub commits
+2. Checks each email against breach databases (HIBP, DeHashed, LeakCheck, IntelX)
+3. Reports which breaches contain the email
+4. Flags if passwords/hashes were exposed (**CRITICAL** severity)
+
+This is valuable for red teams to demonstrate credential reuse risk.
+
 ## Output
 
 ### HTML Report
@@ -197,11 +267,11 @@ Reports are saved to `./reports/` with:
 - Executive summary with metrics
 - Findings sorted by severity
 - Subdomain inventory
-- IP addresses with open ports
+- IP addresses with open ports and CVEs
 - Web applications with technologies
 - Cloud assets
 - GitHub repositories
-- Employee directory
+- Employee directory with breach status
 
 ### Directory Structure
 ```
@@ -219,14 +289,45 @@ screenshots/
 
 ## API Keys
 
+### Core Enrichment
 | Service | Features | Get Key |
 |---------|----------|---------|
 | Shodan | IP enrichment, services, vulns | https://account.shodan.io/ |
 | Censys | Certs, hosts, TLS analysis | https://search.censys.io/account/api |
 | SecurityTrails | DNS history, subdomains | https://securitytrails.com/app/account/credentials |
+| VirusTotal | Domain/IP reputation | https://www.virustotal.com/gui/my-apikey |
+| BinaryEdge | Port scanning data | https://app.binaryedge.io/account/api |
+
+### OSINT
+| Service | Features | Get Key |
+|---------|----------|---------|
 | Hunter.io | Employees, email patterns | https://hunter.io/api-keys |
 | GitHub | Repos, commits, code search | https://github.com/settings/tokens |
-| VirusTotal | Domain/IP reputation | https://www.virustotal.com/gui/my-apikey |
+
+### Intelligence Platforms
+| Service | Features | Get Key |
+|---------|----------|---------|
+| URLScan.io | Screenshots, DOM, tech detection | https://urlscan.io/user/signup |
+| GreyNoise | Scanner/malicious IP detection | https://viz.greynoise.io/account/api-key |
+| AlienVault OTX | Threat pulses, IOCs | https://otx.alienvault.com/api |
+| IPinfo | Geolocation, ASN, VPN detection | https://ipinfo.io/signup |
+| BuiltWith | Technology profiling | https://builtwith.com/ |
+| Chaos | Subdomain database | https://chaos.projectdiscovery.io/ |
+| PassiveTotal | Passive DNS, WHOIS | https://community.riskiq.com/ |
+
+### Breach Checking
+| Service | Features | Get Key |
+|---------|----------|---------|
+| HaveIBeenPwned | Email breach lookup | https://haveibeenpwned.com/API/Key |
+| DeHashed | Credential search | https://dehashed.com/ |
+| LeakCheck | Leak verification | https://leakcheck.io/ |
+| Intelligence X | Dark web, pastes | https://intelx.io/ |
+
+### Free (No Auth Required)
+- **Shodan InternetDB** - CVEs, ports, hostnames
+- **Wayback Machine** - Historical URLs
+- **AlienVault OTX** - Basic threat intel
+- **GreyNoise Community** - Basic IP classification
 
 ## Requirements
 
