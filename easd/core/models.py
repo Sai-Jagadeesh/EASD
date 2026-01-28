@@ -280,6 +280,10 @@ class ScanSession(BaseModel):
     # Module execution history
     module_results: list[ModuleResult] = Field(default_factory=list)
 
+    # OSINT data (populated by osint modules)
+    github_data: dict = Field(default_factory=dict, description="GitHub recon results")
+    employee_data: dict = Field(default_factory=dict, description="Employee discovery results")
+
     # Statistics
     total_domains: int = 0
     total_subdomains: int = 0

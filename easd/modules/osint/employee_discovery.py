@@ -671,7 +671,7 @@ async def run(
                 await asyncio.sleep(1)
 
         # Source 2: GitHub commits (if github_recon already ran)
-        if hasattr(session, 'github_data') and session.github_data:
+        if session.github_data:
             github_emails = session.github_data.get("emails", [])
             for email in github_emails:
                 email_lower = email.lower()
@@ -739,7 +739,7 @@ async def run(
 
                 # Determine source based on where we found it
                 source = "osint"
-                if hasattr(session, 'github_data'):
+                if session.github_data:
                     if email in [e.lower() for e in session.github_data.get("emails", [])]:
                         source = "github"
 
@@ -895,9 +895,6 @@ async def run(
     # =========================================================================
     # Store data in session for report generation
     # =========================================================================
-
-    if not hasattr(session, 'employee_data'):
-        session.employee_data = {}
 
     session.employee_data = {
         "employees": discovered_employees,

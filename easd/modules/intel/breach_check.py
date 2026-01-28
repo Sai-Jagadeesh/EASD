@@ -273,11 +273,11 @@ async def run(
     emails_to_check = set()
 
     # From employee discovery
-    if hasattr(session, 'employee_data') and session.employee_data:
+    if session.employee_data:
         emails_to_check.update(session.employee_data.get('emails', []))
 
     # From GitHub
-    if hasattr(session, 'github_data') and session.github_data:
+    if session.github_data:
         emails_to_check.update(session.github_data.get('emails', []))
 
     # Filter to target domain emails only

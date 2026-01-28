@@ -572,9 +572,6 @@ async def run(
             result.findings.append(finding)
 
     # Store in session metadata for report
-    if not hasattr(session, 'github_data'):
-        session.github_data = {}
-
     session.github_data = {
         "repos": discovered_repos,
         "users": discovered_users,
