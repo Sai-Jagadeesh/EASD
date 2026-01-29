@@ -17,6 +17,36 @@
 
 ---
 
+## Report Preview
+
+<p align="center">
+  <img src="docs/images/report-dashboard.png" alt="EASD Dashboard" width="100%">
+</p>
+
+<p align="center"><i>Interactive dashboard with attack surface metrics and security findings</i></p>
+
+<details>
+<summary><b>View More Screenshots</b></summary>
+
+### Subdomains Discovery
+<p align="center">
+  <img src="docs/images/report-subdomains.png" alt="Subdomains" width="100%">
+</p>
+
+### Web Applications
+<p align="center">
+  <img src="docs/images/report-webapps.png" alt="Web Applications" width="100%">
+</p>
+
+### Screenshot Gallery
+<p align="center">
+  <img src="docs/images/report-screenshots.png" alt="Screenshot Gallery" width="100%">
+</p>
+
+</details>
+
+---
+
 ## Features
 
 ### Discovery Modules
