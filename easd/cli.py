@@ -211,15 +211,79 @@ def run_interactive_wizard():
 
             def on_module_start(name: str):
                 progress.update(main_task, description=f"[cyan]Running {name}...")
+                # Show module-specific info
+                module_info = {
+                    "seed": "WHOIS, Certificate Transparency, ASN discovery",
+                    "domain": "Subdomain enumeration from multiple sources",
+                    "dns": "DNS resolution and validation",
+                    "infrastructure": "Port scanning and service detection",
+                    "enrichment": "Shodan, Censys, SecurityTrails enrichment",
+                    "intel": "Threat intel, CVEs, Wayback, breach data",
+                    "osint": "GitHub recon, employee discovery",
+                    "web": "HTTP probing, tech detection, screenshots",
+                    "cloud": "S3 buckets, Azure blobs, GCP storage",
+                    "correlation": "Data correlation and risk scoring",
+                }
+                console.print(f"\n[bold cyan]▶ {name.upper()}[/bold cyan] - {module_info.get(name, '')}")
 
             def on_module_complete(name: str, result):
                 progress.advance(main_task)
-                status = "[green]OK[/green]" if result.success else "[red]FAIL[/red]"
-                items = result.items_discovered
-                console.print(f"  {status} {name}: {items} items discovered")
+                status = "[green]✓[/green]" if result.success else "[red]✗[/red]"
+
+                # Show detailed results for each module
+                console.print(f"  {status} [bold]{name}[/bold]: {result.items_discovered} items")
+
+                # Show breakdown of what was found
+                details = []
+                if result.domains:
+                    details.append(f"[cyan]{len(result.domains)} domains[/cyan]")
+                if result.subdomains:
+                    details.append(f"[cyan]{len(result.subdomains)} subdomains[/cyan]")
+                if result.ip_addresses:
+                    total_ports = sum(len(ip.ports) for ip in result.ip_addresses)
+                    details.append(f"[cyan]{len(result.ip_addresses)} IPs[/cyan]")
+                    if total_ports:
+                        details.append(f"[green]{total_ports} open ports[/green]")
+                if result.web_applications:
+                    alive = sum(1 for w in result.web_applications if w.is_alive)
+                    details.append(f"[cyan]{len(result.web_applications)} web apps ({alive} alive)[/cyan]")
+                if result.cloud_assets:
+                    public = sum(1 for c in result.cloud_assets if c.is_public)
+                    details.append(f"[cyan]{len(result.cloud_assets)} cloud assets[/cyan]")
+                    if public:
+                        details.append(f"[red]{public} PUBLIC[/red]")
+                if result.certificates:
+                    details.append(f"[cyan]{len(result.certificates)} certificates[/cyan]")
+                if result.findings:
+                    critical = sum(1 for f in result.findings if f.severity.value == "critical")
+                    high = sum(1 for f in result.findings if f.severity.value == "high")
+                    if critical:
+                        details.append(f"[red]{critical} CRITICAL[/red]")
+                    if high:
+                        details.append(f"[yellow]{high} HIGH[/yellow]")
+                    if len(result.findings) - critical - high > 0:
+                        details.append(f"[dim]{len(result.findings) - critical - high} other findings[/dim]")
+
+                if details:
+                    console.print(f"    └─ {', '.join(details)}")
+
+                # Show sample of interesting discoveries
+                if result.findings:
+                    for finding in result.findings[:3]:
+                        severity_color = {"critical": "red", "high": "yellow", "medium": "blue"}.get(finding.severity.value, "dim")
+                        console.print(f"       [{severity_color}]• {finding.title[:70]}{'...' if len(finding.title) > 70 else ''}[/{severity_color}]")
 
             orchestrator.on_module_start(on_module_start)
             orchestrator.on_module_complete(on_module_complete)
+
+            # Add finding callback for real-time critical finding alerts
+            def on_finding(finding):
+                if finding.severity.value in ["critical", "high"]:
+                    severity_color = "red" if finding.severity.value == "critical" else "yellow"
+                    # Only show if not already shown in module complete
+                    pass  # Findings shown in module_complete for cleaner output
+
+            orchestrator.on_finding(on_finding)
 
             asyncio.run(orchestrator.run())
 
@@ -399,13 +463,64 @@ def discover(
             def on_module_start(name: str):
                 current_module["name"] = name
                 progress.update(main_task, description=f"[cyan]Running {name}...")
+                if not quiet:
+                    module_info = {
+                        "seed": "WHOIS, Certificate Transparency, ASN discovery",
+                        "domain": "Subdomain enumeration from multiple sources",
+                        "dns": "DNS resolution and validation",
+                        "infrastructure": "Port scanning and service detection",
+                        "enrichment": "Shodan, Censys, SecurityTrails enrichment",
+                        "intel": "Threat intel, CVEs, Wayback, breach data",
+                        "osint": "GitHub recon, employee discovery",
+                        "web": "HTTP probing, tech detection, screenshots",
+                        "cloud": "S3 buckets, Azure blobs, GCP storage",
+                        "correlation": "Data correlation and risk scoring",
+                    }
+                    console.print(f"\n[bold cyan]▶ {name.upper()}[/bold cyan] - {module_info.get(name, '')}")
 
             def on_module_complete(name: str, result):
                 progress.advance(main_task)
-                status = "[green]OK[/green]" if result.success else "[red]FAIL[/red]"
                 if not quiet:
-                    items = result.items_discovered
-                    console.print(f"  {status} {name}: {items} items discovered")
+                    status = "[green]✓[/green]" if result.success else "[red]✗[/red]"
+                    console.print(f"  {status} [bold]{name}[/bold]: {result.items_discovered} items")
+
+                    # Show breakdown of discoveries
+                    details = []
+                    if result.domains:
+                        details.append(f"[cyan]{len(result.domains)} domains[/cyan]")
+                    if result.subdomains:
+                        details.append(f"[cyan]{len(result.subdomains)} subdomains[/cyan]")
+                    if result.ip_addresses:
+                        total_ports = sum(len(ip.ports) for ip in result.ip_addresses)
+                        details.append(f"[cyan]{len(result.ip_addresses)} IPs[/cyan]")
+                        if total_ports:
+                            details.append(f"[green]{total_ports} open ports[/green]")
+                    if result.web_applications:
+                        alive = sum(1 for w in result.web_applications if w.is_alive)
+                        details.append(f"[cyan]{len(result.web_applications)} web apps ({alive} alive)[/cyan]")
+                    if result.cloud_assets:
+                        public = sum(1 for c in result.cloud_assets if c.is_public)
+                        details.append(f"[cyan]{len(result.cloud_assets)} cloud assets[/cyan]")
+                        if public:
+                            details.append(f"[red]{public} PUBLIC[/red]")
+                    if result.certificates:
+                        details.append(f"[cyan]{len(result.certificates)} certs[/cyan]")
+                    if result.findings:
+                        critical = sum(1 for f in result.findings if f.severity.value == "critical")
+                        high = sum(1 for f in result.findings if f.severity.value == "high")
+                        if critical:
+                            details.append(f"[red]{critical} CRITICAL[/red]")
+                        if high:
+                            details.append(f"[yellow]{high} HIGH[/yellow]")
+
+                    if details:
+                        console.print(f"    └─ {', '.join(details)}")
+
+                    # Show sample findings
+                    if result.findings:
+                        for finding in result.findings[:2]:
+                            sev_color = {"critical": "red", "high": "yellow", "medium": "blue"}.get(finding.severity.value, "dim")
+                            console.print(f"       [{sev_color}]• {finding.title[:65]}{'...' if len(finding.title) > 65 else ''}[/{sev_color}]")
 
             orchestrator.on_module_start(on_module_start)
             orchestrator.on_module_complete(on_module_complete)

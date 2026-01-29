@@ -332,12 +332,43 @@ class Orchestrator:
                         break
                 self.db.update_subdomain(self.session.id, subdomain)
 
-        # Merge IP addresses
+        # Merge IP addresses (update existing IPs with new data like ports)
         for ip in result.ip_addresses:
             if ip.address not in existing_ips:
                 self.session.ip_addresses.append(ip)
                 self.db.add_ip_address(self.session.id, ip)
                 existing_ips.add(ip.address)
+            else:
+                # Update existing IP with new data (ports, services, etc.)
+                for existing_ip in self.session.ip_addresses:
+                    if existing_ip.address == ip.address:
+                        # Merge ports (add new ports, don't duplicate)
+                        existing_ports = {p.number for p in existing_ip.ports}
+                        for port in ip.ports:
+                            if port.number not in existing_ports:
+                                existing_ip.ports.append(port)
+                                existing_ports.add(port.number)
+
+                        # Update other fields if they have new data
+                        if ip.asn and not existing_ip.asn:
+                            existing_ip.asn = ip.asn
+                        if ip.asn_org and not existing_ip.asn_org:
+                            existing_ip.asn_org = ip.asn_org
+                        if ip.reverse_dns and not existing_ip.reverse_dns:
+                            existing_ip.reverse_dns = ip.reverse_dns
+                        if ip.geolocation.country and not existing_ip.geolocation.country:
+                            existing_ip.geolocation = ip.geolocation
+                        if ip.cloud_provider and not existing_ip.cloud_provider:
+                            existing_ip.cloud_provider = ip.cloud_provider
+                        if ip.hostnames:
+                            existing_hostnames = set(existing_ip.hostnames)
+                            for hostname in ip.hostnames:
+                                if hostname not in existing_hostnames:
+                                    existing_ip.hostnames.append(hostname)
+
+                        # Update in database
+                        self.db.update_ip_address(self.session.id, existing_ip)
+                        break
 
         # Merge web applications
         for webapp in result.web_applications:

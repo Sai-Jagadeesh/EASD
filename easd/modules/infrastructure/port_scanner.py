@@ -565,8 +565,11 @@ async def run(
         started_at=datetime.utcnow(),
     )
 
+    console = orchestrator.console
+
     if session.passive_only:
         # Skip active scanning in passive mode
+        console.print("  [dim]Port scanning skipped (passive mode)[/dim]")
         result.success = True
         result.completed_at = datetime.utcnow()
         return result
@@ -581,6 +584,7 @@ async def run(
     ips_to_scan = list(set(ips_to_scan))
 
     if not ips_to_scan:
+        console.print("  [dim]No IPs to scan[/dim]")
         result.success = True
         result.completed_at = datetime.utcnow()
         return result
@@ -591,15 +595,20 @@ async def run(
         ports_to_scan.extend(config.modules.ports.custom_ports)
     ports_to_scan = list(set(ports_to_scan))
 
+    console.print(f"  [cyan]Scanning {len(ips_to_scan)} IPs for {len(ports_to_scan)} common ports...[/cyan]")
+
     # Check if we should use masscan for speed (enabled for normal+ intensity)
     masscan_results = {}
     if len(ips_to_scan) > 5 and config.scan.intensity in ("normal", "aggressive"):
+        console.print("  [dim]Using masscan for initial discovery...[/dim]")
         port_range = ",".join(str(p) for p in ports_to_scan)
         masscan_results = await run_masscan(
             ips_to_scan,
             port_range,
             config.scan.rate_limit,
         )
+        if masscan_results:
+            console.print(f"  [green]Masscan found open ports on {len(masscan_results)} hosts[/green]")
 
     # Scan multiple IPs concurrently
     ip_semaphore = asyncio.Semaphore(10)  # Max 10 IPs scanned concurrently
@@ -634,6 +643,9 @@ async def run(
     )
 
     # Process results
+    total_open_ports = 0
+    hosts_with_ports = 0
+
     for res in scan_results:
         if isinstance(res, Exception):
             continue
@@ -642,6 +654,23 @@ async def run(
         if not open_ports:
             continue
 
+        hosts_with_ports += 1
+        total_open_ports += len(open_ports)
+
+        # Show discovered ports
+        port_list = [str(p.number) for p in open_ports[:10]]
+        port_str = ", ".join(port_list)
+        if len(open_ports) > 10:
+            port_str += f" (+{len(open_ports) - 10} more)"
+
+        # Color-code services for dangerous ones
+        services = [p.service.name for p in open_ports if p.service.name != "unknown"]
+        if services:
+            console.print(f"    [green]{ip_addr}[/green] → {len(open_ports)} ports: {port_str}")
+            console.print(f"      [dim]Services: {', '.join(services[:8])}[/dim]")
+        else:
+            console.print(f"    [green]{ip_addr}[/green] → {len(open_ports)} ports: {port_str}")
+
         # Find or create IP record
         existing_ip = next(
             (ip for ip in session.ip_addresses if ip.address == ip_addr),
@@ -649,11 +678,19 @@ async def run(
         )
 
         if existing_ip:
-            existing_ip.ports = open_ports
+            # Merge ports instead of replacing (preserve Shodan/Censys data)
+            existing_port_nums = {p.number for p in existing_ip.ports}
+            for port in open_ports:
+                if port.number not in existing_port_nums:
+                    existing_ip.ports.append(port)
+                    existing_port_nums.add(port.number)
+
             result.ip_addresses.append(existing_ip)
 
             # Check for dangerous services
             findings = check_dangerous_services(existing_ip)
+            for f in findings:
+                console.print(f"      [bold red]⚠ {f.title}[/bold red]")
             result.findings.extend(findings)
         else:
             ip = IPAddress(
@@ -665,7 +702,15 @@ async def run(
             result.ip_addresses.append(ip)
 
             findings = check_dangerous_services(ip)
+            for f in findings:
+                console.print(f"      [bold red]⚠ {f.title}[/bold red]")
             result.findings.extend(findings)
+
+    # Summary
+    if hosts_with_ports > 0:
+        console.print(f"  [bold green]Found {total_open_ports} open ports across {hosts_with_ports} hosts[/bold green]")
+    else:
+        console.print("  [yellow]No open ports found[/yellow]")
 
     result.items_discovered = sum(len(ip.ports) for ip in result.ip_addresses)
     result.success = True
