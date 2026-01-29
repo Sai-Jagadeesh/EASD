@@ -8,7 +8,7 @@
 <h1 align="center">EASD - External Attack Surface Discovery</h1>
 
 <p align="center">
-  <b>A comprehensive external attack surface discovery tool for red team engagements</b>
+  <b> External attack surface discovery tool for red team engagements</b>
 </p>
 
 <p align="center">
