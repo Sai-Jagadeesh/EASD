@@ -596,6 +596,180 @@ def list_sessions(
         console.print(table)
 
 
+@app.command("hunt")
+def hunt_resources(
+    resources: str = typer.Argument(
+        ...,
+        help="Comma-separated resource types to hunt (e.g., s3,mongodb,redis)"
+    ),
+    company: Optional[str] = typer.Option(
+        None, "--company", "-c",
+        help="Target company name"
+    ),
+    domains: Optional[str] = typer.Option(
+        None, "--domains", "-d",
+        help="Comma-separated list of target domains"
+    ),
+    ips: Optional[str] = typer.Option(
+        None, "--ips", "-i",
+        help="Comma-separated list of IP addresses to scan"
+    ),
+    list_resources: bool = typer.Option(
+        False, "--list", "-l",
+        help="List all available resource types"
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None, "--config", "-C",
+        help="Path to configuration file"
+    ),
+):
+    """
+    Hunt for specific resource types (S3, MongoDB, Redis, etc.)
+
+    Examples:
+        easd hunt s3,firebase -c "Acme Corp"
+        easd hunt mongodb,redis,elasticsearch --ips 10.0.0.1,10.0.0.2
+        easd hunt jenkins,docker-registry -d acme.com
+        easd hunt --list  # Show all available resource types
+    """
+    from easd.modules.targeted.resource_scanner import (
+        TargetedResourceScanner,
+        get_available_resources,
+        get_resource_categories,
+    )
+
+    print_banner()
+
+    # List available resources if requested
+    if list_resources or resources == "list":
+        console.print("\n[bold cyan]Available Resource Types[/bold cyan]\n")
+
+        categories = get_resource_categories()
+        all_resources = get_available_resources()
+
+        for category, resource_keys in sorted(categories.items()):
+            console.print(f"[bold yellow]{category.upper()}[/bold yellow]")
+            for key in sorted(resource_keys):
+                resource = all_resources[key]
+                console.print(f"  [cyan]{key:20}[/cyan] - {resource.description}")
+            console.print()
+
+        console.print("[dim]Usage: easd hunt <resource1>,<resource2> -c 'Company' -d domain.com[/dim]")
+        raise typer.Exit(0)
+
+    # Validate inputs
+    if not company and not domains and not ips:
+        console.print("[red]Error: At least one of --company, --domains, or --ips must be specified[/red]")
+        raise typer.Exit(1)
+
+    # Parse resource types
+    resource_list = [r.strip().lower() for r in resources.split(",") if r.strip()]
+    available = get_available_resources()
+
+    invalid_resources = [r for r in resource_list if r not in available]
+    if invalid_resources:
+        console.print(f"[red]Unknown resource types: {', '.join(invalid_resources)}[/red]")
+        console.print(f"[dim]Run 'easd hunt --list' to see available types[/dim]")
+        raise typer.Exit(1)
+
+    # Load configuration
+    config = EASDConfig.load(config_file)
+    set_config(config)
+
+    # Parse inputs
+    domain_list = [d.strip() for d in domains.split(",")] if domains else []
+    ip_list = [i.strip() for i in ips.split(",")] if ips else []
+
+    # Generate base names for cloud enumeration
+    base_names = []
+    if company:
+        # Clean company name
+        company_lower = company.lower()
+        for suffix in [" inc", " llc", " ltd", " corp", " co"]:
+            if company_lower.endswith(suffix):
+                company_lower = company_lower[:-len(suffix)]
+        base_names.append(company_lower)
+        base_names.append(company_lower.replace(" ", "-"))
+        base_names.append(company_lower.replace(" ", ""))
+
+    for domain in domain_list:
+        parts = domain.split(".")
+        if len(parts) >= 2:
+            base_names.append(parts[0])
+
+    # Generate URLs from domains
+    urls = []
+    for domain in domain_list:
+        urls.append(f"https://{domain}")
+        urls.append(f"http://{domain}")
+
+    # Display scan info
+    console.print(f"\n[bold green]Targeted Resource Hunt[/bold green]")
+    console.print(f"[cyan]Resources:[/cyan] {', '.join(resource_list)}")
+    if company:
+        console.print(f"[cyan]Company:[/cyan] {company}")
+    if domain_list:
+        console.print(f"[cyan]Domains:[/cyan] {', '.join(domain_list)}")
+    if ip_list:
+        console.print(f"[cyan]IPs:[/cyan] {', '.join(ip_list)}")
+    console.print()
+
+    # Run targeted scan
+    scanner = TargetedResourceScanner(config, console)
+
+    try:
+        result = asyncio.run(scanner.scan(
+            resources=resource_list,
+            base_names=base_names,
+            ips=ip_list,
+            urls=urls,
+        ))
+
+        # Display results
+        console.print(f"\n[bold green]{'═' * 50}[/bold green]")
+        console.print(f"[bold green]Scan Complete[/bold green]")
+        console.print(f"[bold green]{'═' * 50}[/bold green]\n")
+
+        if result.cloud_assets:
+            console.print(f"[cyan]Cloud Assets Found: {len(result.cloud_assets)}[/cyan]")
+            for asset in result.cloud_assets:
+                status = "[red]PUBLIC[/red]" if asset.is_public else "[green]Private[/green]"
+                console.print(f"  • {asset.provider.value.upper()} {asset.asset_type.value}: {asset.name} - {status}")
+
+        if result.ip_addresses:
+            console.print(f"\n[cyan]Services Found: {len(result.ip_addresses)}[/cyan]")
+            for ip in result.ip_addresses:
+                for port in ip.ports:
+                    console.print(f"  • {ip.address}:{port.number} - {port.service.name}")
+
+        if result.findings:
+            console.print(f"\n[bold yellow]Findings: {len(result.findings)}[/bold yellow]")
+
+            # Group by severity
+            by_severity = {"critical": [], "high": [], "medium": [], "low": [], "info": []}
+            for finding in result.findings:
+                by_severity[finding.severity.value].append(finding)
+
+            for severity in ["critical", "high", "medium", "low", "info"]:
+                findings = by_severity[severity]
+                if findings:
+                    color = {"critical": "red", "high": "yellow", "medium": "blue", "low": "dim", "info": "dim"}[severity]
+                    console.print(f"\n  [{color}]{severity.upper()} ({len(findings)})[/{color}]")
+                    for finding in findings[:5]:  # Show top 5 per severity
+                        console.print(f"    • {finding.title}")
+                        if finding.evidence:
+                            console.print(f"      [dim]{finding.evidence[:80]}...[/dim]" if len(finding.evidence) > 80 else f"      [dim]{finding.evidence}[/dim]")
+
+        if not result.findings and not result.cloud_assets and not result.ip_addresses:
+            console.print("[yellow]No resources found[/yellow]")
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Scan interrupted[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
 def report(
     session_id: str = typer.Argument(..., help="Session ID to generate report for"),
