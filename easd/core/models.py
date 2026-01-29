@@ -283,6 +283,7 @@ class ScanSession(BaseModel):
     # OSINT data (populated by osint modules)
     github_data: dict = Field(default_factory=dict, description="GitHub recon results")
     employee_data: dict = Field(default_factory=dict, description="Employee discovery results")
+    cloud_data: dict = Field(default_factory=dict, description="Cloud enumeration details (file listings)")
 
     # Statistics
     total_domains: int = 0
